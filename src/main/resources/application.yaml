@@ -1,0 +1,36 @@
+server:
+  port: 8080
+
+jwt:
+  secret: kskblzdjdwqzkblmpwzbyqslnzswpwsbll1234567
+  expiration: 86400000
+spring:
+  application:
+    name: psych-agent
+  datasource:
+    url: jdbc:mysql://localhost:3306/psych_agent?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+    username: root
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        options:
+          model: qwen2.5:3b
+      embedding:
+        options:
+          model: nomic-embed-text
+
+    vectorstore:
+      chroma:
+        client:
+          host: http://localhost
+          port: 8000
+        tenant-name: default_tenant
+        database-name: default_database
+        initialize-schema: true
+        collection-name: psych-agent-knowledge
