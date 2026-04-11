@@ -32,3 +32,4 @@ build/
 ### VS Code ###
 .vscode/
 risk_records.xlsx
+application.yaml
