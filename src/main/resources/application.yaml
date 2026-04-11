@@ -34,3 +34,14 @@ spring:
         database-name: default_database
         initialize-schema: true
         collection-name: psych-agent-knowledge
+  mail:
+    host: smtp.qq.com
+    port: 587
+    username: 1585017154@qq.com
+    password: flagdpynldlajagi
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true

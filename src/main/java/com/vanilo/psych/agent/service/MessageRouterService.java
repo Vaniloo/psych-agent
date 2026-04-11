@@ -11,12 +11,14 @@ public class MessageRouterService {
     private final ChatService chatService;
     private final PsychologicalService psychologicalService;
     private final ExcelRecordService excelRecordService;
+    private final MailAlertService mailAlertService;
 
-    public MessageRouterService(IntentService intentService, ChatService chatService, PsychologicalService psychologicalService, ExcelRecordService excelRecordService) {
+    public MessageRouterService(IntentService intentService, ChatService chatService, PsychologicalService psychologicalService, ExcelRecordService excelRecordService, MailAlertService mailAlertService) {
         this.intentService = intentService;
         this.chatService = chatService;
         this.psychologicalService = psychologicalService;
         this.excelRecordService = excelRecordService;
+        this.mailAlertService = mailAlertService;
     }
     public MessageResponse route(String message,String username){
         if(message==null||username==null||message.isBlank()||username.isBlank()){
@@ -35,6 +37,12 @@ public class MessageRouterService {
                 AnalyzeResponse response = psychologicalService.analyze(message,username);
                 if("high".equalsIgnoreCase(response.getRisk())){
                     excelRecordService.appendHighRiskRecord(username,message,response);
+                    try {
+                        mailAlertService.sendHighRiskEmail(username,message,response);
+                    }
+                    catch(Exception e){
+                        e.printStackTrace();
+                    }
                 }
                 return  new MessageResponse(
                         result.getIntent(),
