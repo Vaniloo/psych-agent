@@ -22,7 +22,7 @@ public class ChatController {
 
     @PostMapping
     public String chat(@RequestBody String message){
-        return chatService.chat(message);
+        return chatService.plainChat(message);
     }
     @PostMapping("/analyze")
     public AnalyzeResponse analyze(@RequestBody String message, Authentication authentication){

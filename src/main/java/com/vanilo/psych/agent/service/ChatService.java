@@ -18,7 +18,7 @@ public class ChatService {
     }
 
 
-    public String chat(String message){
+    public String ragChat(String message){
         List<KnowledgeSearchResponse> knowledges = knowledgeService.searchKnowledge(message);
 
         String knowledgeContext = knowledges.isEmpty()?"暂无相关知识": IntStream.range(0, knowledges.size())
@@ -43,6 +43,18 @@ public class ChatService {
                     用户问题：
                     %s
                     """.formatted(knowledgeContext, message))
+                .call()
+                .content();
+    }
+    public String plainChat(String message){
+        if(message==null||message.isBlank()){
+            throw new RuntimeException("message不能为空");
+        }
+        return chatClient.prompt()
+                .system("""
+                       你是一名知识渊博并幽默的人，你的任务是跟用户聊天并让人保持心情愉悦。
+                       """)
+                .user(message)
                 .call()
                 .content();
     }
