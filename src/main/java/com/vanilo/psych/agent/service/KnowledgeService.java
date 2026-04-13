@@ -4,9 +4,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vanilo.psych.agent.dto.KnowledgeAddRequest;
+import com.vanilo.psych.agent.dto.KnowledgeImportRequest;
 import com.vanilo.psych.agent.dto.KnowledgeSearchResponse;
 import com.vanilo.psych.agent.entity.KnowledgeDocument;
 import com.vanilo.psych.agent.repository.KnowledgeDocumentRepository;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -20,6 +22,7 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 
 @Service
@@ -29,13 +32,17 @@ public class KnowledgeService {
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
     private final KnowledgeLockService knowledgeLockService;
+    private final TextChunkService textChunkService;
 
-    public KnowledgeService(VectorStore vectorStore, KnowledgeDocumentRepository repository, StringRedisTemplate stringRedisTemplate, ObjectMapper objectMapper, KnowledgeLockService knowledgeLockService) {
+
+    public KnowledgeService(VectorStore vectorStore, KnowledgeDocumentRepository repository, StringRedisTemplate stringRedisTemplate, ObjectMapper objectMapper, KnowledgeLockService knowledgeLockService, TextChunkService textChunkService) {
         this.vectorStore = vectorStore;
         this.repository = repository;
         this.stringRedisTemplate = stringRedisTemplate;
         this.objectMapper = objectMapper;
         this.knowledgeLockService = knowledgeLockService;
+        this.textChunkService = textChunkService;
+
     }
     public void addKnowledge(KnowledgeAddRequest knowledgeAddRequest){
         if(knowledgeAddRequest.getContent() == null||knowledgeAddRequest.getContent().isBlank()){
@@ -72,11 +79,17 @@ public class KnowledgeService {
             System.out.println("duplicate knowledge add skipped");
         }
     }
-    public List<KnowledgeSearchResponse> searchKnowledge(String query){
+    public List<KnowledgeSearchResponse> searchKnowledge(String query,String category){
         if(query==null||query.isBlank()){
             throw new RuntimeException("query不得为空");
         }
-        String cacheKey="rag:"+query;
+        String cacheKey;
+        if (category!=null&&!category.isBlank()){
+            cacheKey="rag:"+category+":"+query;
+        }
+        else{
+            cacheKey="rag:all:"+query;
+        }
         String cached=stringRedisTemplate.opsForValue().get(cacheKey);
         if(cached!=null){
             try {
@@ -87,18 +100,21 @@ public class KnowledgeService {
             }
         }
         System.out.println("cache miss");
+        SearchRequest.Builder builder=SearchRequest.builder();
+        builder.query(query);
+        builder.topK(10);
+        if (category!=null&&!category.isBlank()){
+            builder.filterExpression("category == '"+category+"'");
+        }
         List<Document> documentList=vectorStore.similaritySearch(
-                SearchRequest.builder()
-                        .query(query)
-                        .topK(3)
-                        .build()
+                builder.build()
         );
         List<KnowledgeSearchResponse> searchResults = documentList.stream().map(
                 doc->new KnowledgeSearchResponse(
                 doc.getText(),
                 doc.getMetadata().get("category")==null?"default":doc.getMetadata().get("category").toString(),
                 doc.getMetadata().get("source")==null?"unknown":doc.getMetadata().get("source").toString(),
-                doc.getMetadata().get("id")==null?null:doc.getMetadata().get("id").toString()
+                doc.getId()
             )
         ).toList();
         try {
@@ -135,6 +151,41 @@ public class KnowledgeService {
         }
         Pageable pageable = PageRequest.of(page,size, Sort.by("createdAt").descending());
         return repository.findAll(pageable);
+    }
+    public List<KnowledgeSearchResponse> searchKnowledge(String query){
+        return searchKnowledge(query,null);
+    }
+    public void importDocument(KnowledgeImportRequest knowledgeImportRequest){
+        if(knowledgeImportRequest==null||knowledgeImportRequest.getContent()==null||knowledgeImportRequest.getContent().isBlank()){
+            throw new RuntimeException("内容不能为空");
+        }
+        String id= UUID.randomUUID().toString();
+        String content = knowledgeImportRequest.getContent();
+        String category = knowledgeImportRequest.getCategory()==null?"default":knowledgeImportRequest.getCategory();
+        String source = knowledgeImportRequest.getSource()==null?"unknown":knowledgeImportRequest.getSource();
+        KnowledgeDocument doc=new KnowledgeDocument(
+                id,content,category, source, LocalDateTime.now()
+        );
+        repository.save(doc);
+        List<String> chunks =textChunkService.splitText(knowledgeImportRequest.getContent(),
+                knowledgeImportRequest.getChunkSize()==null?400:knowledgeImportRequest.getChunkSize(),
+                knowledgeImportRequest.getOverlap()==null?80:knowledgeImportRequest.getOverlap());
+        List<Document> docs=new ArrayList<>();
+        for(int i=0;i<chunks.size();i++){
+            Map<String,Object> metaMap=new HashMap<>();
+            metaMap.put("documentId",id);
+            metaMap.put("chunkIndex",i);
+            metaMap.put("category",category);
+            metaMap.put("source",source);
+            String chunk=chunks.get(i);
+            String chunkId=id+"_chunk_"+i;
+            Document docu=new Document(chunkId,chunk,metaMap);
+            docs.add(docu);
+
+        }
+        vectorStore.add(docs);
+        clearRagCache();
+
     }
     private void clearRagCache(){
         Set<String> keys = stringRedisTemplate.keys("rag:*");

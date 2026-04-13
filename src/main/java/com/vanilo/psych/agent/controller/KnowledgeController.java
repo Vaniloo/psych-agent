@@ -1,12 +1,11 @@
 package com.vanilo.psych.agent.controller;
 
 import com.vanilo.psych.agent.dto.KnowledgeAddRequest;
+import com.vanilo.psych.agent.dto.KnowledgeImportRequest;
 import com.vanilo.psych.agent.dto.KnowledgeSearchResponse;
 import com.vanilo.psych.agent.entity.KnowledgeDocument;
 import com.vanilo.psych.agent.service.KnowledgeService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -24,8 +23,9 @@ public class KnowledgeController {
         return "ok";
     }
     @GetMapping("/search")
-    public List<KnowledgeSearchResponse> searchKnowledge(@RequestParam("query") String query){
-        return knowledgeService.searchKnowledge(query);
+    public List<KnowledgeSearchResponse> searchKnowledge(@RequestParam("query") String query,
+                            @RequestParam(value = "category",required=false)String category){
+        return knowledgeService.searchKnowledge(query,category);
     }
     @DeleteMapping("/{id}")
     public String deleteKnowledge(@PathVariable String id){
@@ -42,6 +42,11 @@ public class KnowledgeController {
             @RequestParam("size") int size
     ){
         return knowledgeService.listDocumentsByPage(page, size);
+    }
+    @PostMapping("/import")
+    public String importDocument(@RequestBody KnowledgeImportRequest request){
+        knowledgeService.importDocument(request);
+        return "ok";
     }
 
 }
