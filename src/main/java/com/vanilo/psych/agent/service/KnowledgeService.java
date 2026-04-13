@@ -28,41 +28,49 @@ public class KnowledgeService {
     private final KnowledgeDocumentRepository repository;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
+    private final KnowledgeLockService knowledgeLockService;
 
-    public KnowledgeService(VectorStore vectorStore, KnowledgeDocumentRepository repository, StringRedisTemplate stringRedisTemplate, ObjectMapper objectMapper) {
+    public KnowledgeService(VectorStore vectorStore, KnowledgeDocumentRepository repository, StringRedisTemplate stringRedisTemplate, ObjectMapper objectMapper, KnowledgeLockService knowledgeLockService) {
         this.vectorStore = vectorStore;
         this.repository = repository;
         this.stringRedisTemplate = stringRedisTemplate;
         this.objectMapper = objectMapper;
+        this.knowledgeLockService = knowledgeLockService;
     }
     public void addKnowledge(KnowledgeAddRequest knowledgeAddRequest){
         if(knowledgeAddRequest.getContent() == null||knowledgeAddRequest.getContent().isBlank()){
             throw new RuntimeException("content不能为空");
         }
         String content = knowledgeAddRequest.getContent();
-        List<KnowledgeSearchResponse> searchResults = searchKnowledge(content);
-        String checkContent = searchResults.isEmpty() ? null : searchResults.get(0).getContent();
-        if(checkContent!=null&&checkContent.equals(content)){
-            return;
+        boolean locked= knowledgeLockService.tryAddLock(content);
+        if (locked) {
+            List<KnowledgeSearchResponse> searchResults = searchKnowledge(content);
+            String checkContent = searchResults.isEmpty() ? null : searchResults.get(0).getContent();
+            if(checkContent!=null&&checkContent.equals(content)){
+                return;
+            }
+            String id= UUID.randomUUID().toString();
+            String category = knowledgeAddRequest.getCategory()==null?"default":knowledgeAddRequest.getCategory();
+            String source = knowledgeAddRequest.getSource()==null?"unknown":knowledgeAddRequest.getSource();
+            KnowledgeDocument doc=new KnowledgeDocument(
+              id,content,category, source, LocalDateTime.now()
+            );
+            repository.save(doc);
+            Map<String,Object> metadata = new HashMap<>();
+            metadata.put("id",id);
+            metadata.put("category",category);
+            metadata.put("source",source);
+            Document document = Document.builder()
+                    .id(id)
+                    .text(content)
+                    .metadata(metadata)
+                    .build();
+            vectorStore.add(List.of(document));
+            clearRagCache();
         }
-        String id= UUID.randomUUID().toString();
-        String category = knowledgeAddRequest.getCategory()==null?"default":knowledgeAddRequest.getCategory();
-        String source = knowledgeAddRequest.getSource()==null?"unknown":knowledgeAddRequest.getSource();
-        KnowledgeDocument doc=new KnowledgeDocument(
-          id,content,category, source, LocalDateTime.now()
-        );
-        repository.save(doc);
-        Map<String,Object> metadata = new HashMap<>();
-        metadata.put("id",id);
-        metadata.put("category",category);
-        metadata.put("source",source);
-        Document document = Document.builder()
-                .id(id)
-                .text(content)
-                .metadata(metadata)
-                .build();
-        vectorStore.add(List.of(document));
-        clearRagCache();
+        else{
+            System.out.println("duplicate knowledge add skipped");
+        }
     }
     public List<KnowledgeSearchResponse> searchKnowledge(String query){
         if(query==null||query.isBlank()){
