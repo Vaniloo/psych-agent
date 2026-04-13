@@ -1,27 +1,55 @@
 package com.vanilo.psych.agent.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vanilo.psych.agent.dto.IntentResult;
 import com.vanilo.psych.agent.enums.IntentType;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.List;
 
 @Service
 public class IntentService {
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper;
-    public IntentService(ChatClient.Builder chatClientBuilder, ObjectMapper objectMapper) {
+    private final StringRedisTemplate stringRedisTemplate;
+
+    public IntentService(ChatClient.Builder chatClientBuilder, ObjectMapper objectMapper, StringRedisTemplate stringRedisTemplate) {
         this.chatClient = chatClientBuilder.build();
         this.objectMapper = objectMapper;
+        this.stringRedisTemplate = stringRedisTemplate;
     }
     public IntentResult classify(String message) {
         if (message == null || message.isBlank()) {
             throw new RuntimeException("信息不能为空");
         }
-        if(isHighrisk(message)){
-            return new IntentResult(IntentType.RISK,1.0,"命中风险词");
+        String cacheKey = "intent:" + message;
+        String cached= stringRedisTemplate.opsForValue().get(cacheKey);
+        if (cached != null) {
+            try {
+                System.out.println("cached: " + message);
+                return objectMapper.readValue(cached, IntentResult.class);
+            } catch (JsonProcessingException e) {
+                e.printStackTrace();
+            }
+        }
+        System.out.println("cache missed");
+        if(isHighRisk(message)){
+            IntentResult intentResult = new IntentResult(IntentType.RISK,1.0,"命中风险词");
+
+            try {
+                stringRedisTemplate.opsForValue().set(
+                        cacheKey,
+                        objectMapper.writeValueAsString(intentResult),
+                        Duration.ofMinutes(10)
+                );
+            } catch (JsonProcessingException e) {
+                e.printStackTrace();
+            }
+            return intentResult;
         }
         String result=chatClient.prompt()
                 .system("""
@@ -56,15 +84,20 @@ public class IntentService {
             throw new RuntimeException("未返回合法json"+result);
         }
         try {
-            return objectMapper.readValue(result,IntentResult.class);
-        }
-        catch (Exception e) {
-            throw new RuntimeException("意图分类解析失败："+result,e);
+            IntentResult intentResult = objectMapper.readValue(result, IntentResult.class);
+            stringRedisTemplate.opsForValue().set(
+                    cacheKey,
+                    objectMapper.writeValueAsString(intentResult),
+                    Duration.ofMinutes(10)
+            );
+            return intentResult;
+        } catch (Exception e) {
+            throw new RuntimeException("意图分类解析失败：" + result, e);
         }
 
 
     }
-    public Boolean isHighrisk(String message) {
+    private boolean isHighRisk(String message) {
         List<String> riskWords=List.of(
                 "想死",
                 "不想活",

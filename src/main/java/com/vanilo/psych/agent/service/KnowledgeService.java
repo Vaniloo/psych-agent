@@ -1,5 +1,8 @@
 package com.vanilo.psych.agent.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vanilo.psych.agent.dto.KnowledgeAddRequest;
 import com.vanilo.psych.agent.dto.KnowledgeSearchResponse;
 import com.vanilo.psych.agent.entity.KnowledgeDocument;
@@ -11,22 +14,26 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 
 @Service
 public class KnowledgeService {
     private final VectorStore vectorStore;
     private final KnowledgeDocumentRepository repository;
-    public KnowledgeService(VectorStore vectorStore, KnowledgeDocumentRepository repository) {
+    private final StringRedisTemplate stringRedisTemplate;
+    private final ObjectMapper objectMapper;
+
+    public KnowledgeService(VectorStore vectorStore, KnowledgeDocumentRepository repository, StringRedisTemplate stringRedisTemplate, ObjectMapper objectMapper) {
         this.vectorStore = vectorStore;
         this.repository = repository;
+        this.stringRedisTemplate = stringRedisTemplate;
+        this.objectMapper = objectMapper;
     }
     public void addKnowledge(KnowledgeAddRequest knowledgeAddRequest){
         if(knowledgeAddRequest.getContent() == null||knowledgeAddRequest.getContent().isBlank()){
@@ -55,25 +62,47 @@ public class KnowledgeService {
                 .metadata(metadata)
                 .build();
         vectorStore.add(List.of(document));
+        clearRagCache();
     }
     public List<KnowledgeSearchResponse> searchKnowledge(String query){
         if(query==null||query.isBlank()){
             throw new RuntimeException("query不得为空");
         }
+        String cacheKey="rag:"+query;
+        String cached=stringRedisTemplate.opsForValue().get(cacheKey);
+        if(cached!=null){
+            try {
+                System.out.println("cache hit:"+query);
+                return objectMapper.readValue(cached,new TypeReference<List<KnowledgeSearchResponse>>(){});
+            } catch (JsonProcessingException e) {
+                e.printStackTrace();
+            }
+        }
+        System.out.println("cache miss");
         List<Document> documentList=vectorStore.similaritySearch(
                 SearchRequest.builder()
                         .query(query)
                         .topK(3)
                         .build()
         );
-        return documentList.stream().map(
-                doc-> new KnowledgeSearchResponse(
-                        doc.getText(),
-                        doc.getMetadata().get("category")==null?"default":doc.getMetadata().get("category").toString(),
-                        doc.getMetadata().get("source")==null?"unknown":doc.getMetadata().get("source").toString(),
-                        doc.getMetadata().get("id")==null?null:doc.getMetadata().get("id").toString()
-                )
+        List<KnowledgeSearchResponse> searchResults = documentList.stream().map(
+                doc->new KnowledgeSearchResponse(
+                doc.getText(),
+                doc.getMetadata().get("category")==null?"default":doc.getMetadata().get("category").toString(),
+                doc.getMetadata().get("source")==null?"unknown":doc.getMetadata().get("source").toString(),
+                doc.getMetadata().get("id")==null?null:doc.getMetadata().get("id").toString()
+            )
         ).toList();
+        try {
+            stringRedisTemplate.opsForValue().set(
+                    cacheKey,
+                    objectMapper.writeValueAsString(searchResults),
+                    Duration.ofMinutes(10)
+            );
+        } catch (JsonProcessingException e) {
+            e.printStackTrace();
+        }
+        return searchResults;
     }
     public void deleteKnowledge(String id){
         if(id==null||id.isBlank()){
@@ -84,6 +113,7 @@ public class KnowledgeService {
         }
         repository.deleteById(id);
         vectorStore.delete(List.of(id));
+        clearRagCache();
     }
     public List<KnowledgeDocument> listAllDocuments(){
         return repository.findAll();
@@ -97,6 +127,12 @@ public class KnowledgeService {
         }
         Pageable pageable = PageRequest.of(page,size, Sort.by("createdAt").descending());
         return repository.findAll(pageable);
+    }
+    private void clearRagCache(){
+        Set<String> keys = stringRedisTemplate.keys("rag:*");
+        if(keys!=null&&!keys.isEmpty()){
+            stringRedisTemplate.delete(keys);
+        }
     }
 
 }
