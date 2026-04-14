@@ -8,7 +8,6 @@ import com.vanilo.psych.agent.dto.KnowledgeImportRequest;
 import com.vanilo.psych.agent.dto.KnowledgeSearchResponse;
 import com.vanilo.psych.agent.entity.KnowledgeDocument;
 import com.vanilo.psych.agent.repository.KnowledgeDocumentRepository;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -22,7 +21,7 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 
 @Service
@@ -117,16 +116,17 @@ public class KnowledgeService {
                 doc.getId()
             )
         ).toList();
+        List<KnowledgeSearchResponse> rerankedResults=rerankResults(query,category,searchResults);
         try {
             stringRedisTemplate.opsForValue().set(
                     cacheKey,
-                    objectMapper.writeValueAsString(searchResults),
+                    objectMapper.writeValueAsString(rerankedResults),
                     Duration.ofMinutes(10)
             );
         } catch (JsonProcessingException e) {
             e.printStackTrace();
         }
-        return searchResults;
+        return rerankedResults;
     }
     public void deleteKnowledge(String id){
         if(id==null||id.isBlank()){
@@ -192,6 +192,50 @@ public class KnowledgeService {
         if(keys!=null&&!keys.isEmpty()){
             stringRedisTemplate.delete(keys);
         }
+    }
+    private int calculateRerankScore(
+            String query,
+            String category,
+            KnowledgeSearchResponse item
+    ){
+        int score=0;
+        if(category!=null&&!category.isBlank()){
+            if(item.getCategory()!=null&&!item.getCategory().isBlank()){
+                if(item.getCategory().equals(category)){
+                    score+=20;
+                }
+            }
+        }
+        String content=item.getContent();
+        if(content!=null&&!content.isBlank()){
+            if(content.contains(query)){
+                score+=50;
+            }
+            for(int i=0;i<query.length()-1;i++){
+                if(content.contains(query.substring(i,i+2))){
+                    score+=2;
+                }
+            }
+        }
+
+        return score;
+    }
+    private List<KnowledgeSearchResponse> rerankResults(
+            String query,
+            String category,
+            List<KnowledgeSearchResponse> results
+    ){
+        if(results==null||results.isEmpty()){
+            return results;
+        }
+        return results.stream().sorted(
+                (a,b)->{
+                    int scoreA=calculateRerankScore(query,category,a);
+                    int scoreB=calculateRerankScore(query,category,b);
+                    return Integer.compare(scoreB,scoreA);
+                }
+
+        ).collect(Collectors.toList());
     }
 
 }
