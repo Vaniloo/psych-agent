@@ -32,16 +32,17 @@ public class KnowledgeService {
     private final ObjectMapper objectMapper;
     private final KnowledgeLockService knowledgeLockService;
     private final TextChunkService textChunkService;
+    private final RerankService rerankService;
 
 
-    public KnowledgeService(VectorStore vectorStore, KnowledgeDocumentRepository repository, StringRedisTemplate stringRedisTemplate, ObjectMapper objectMapper, KnowledgeLockService knowledgeLockService, TextChunkService textChunkService) {
+    public KnowledgeService(VectorStore vectorStore, KnowledgeDocumentRepository repository, StringRedisTemplate stringRedisTemplate, ObjectMapper objectMapper, KnowledgeLockService knowledgeLockService, TextChunkService textChunkService,RerankService rerankService) {
         this.vectorStore = vectorStore;
         this.repository = repository;
         this.stringRedisTemplate = stringRedisTemplate;
         this.objectMapper = objectMapper;
         this.knowledgeLockService = knowledgeLockService;
         this.textChunkService = textChunkService;
-
+        this.rerankService = rerankService;
     }
     public void addKnowledge(KnowledgeAddRequest knowledgeAddRequest){
         if(knowledgeAddRequest.getContent() == null||knowledgeAddRequest.getContent().isBlank()){
@@ -116,7 +117,7 @@ public class KnowledgeService {
                 doc.getId()
             )
         ).toList();
-        List<KnowledgeSearchResponse> rerankedResults=rerankResults(query,category,searchResults);
+        List<KnowledgeSearchResponse> rerankedResults=rerankService.rerank(query,category,searchResults);
         try {
             stringRedisTemplate.opsForValue().set(
                     cacheKey,
@@ -192,50 +193,6 @@ public class KnowledgeService {
         if(keys!=null&&!keys.isEmpty()){
             stringRedisTemplate.delete(keys);
         }
-    }
-    private int calculateRerankScore(
-            String query,
-            String category,
-            KnowledgeSearchResponse item
-    ){
-        int score=0;
-        if(category!=null&&!category.isBlank()){
-            if(item.getCategory()!=null&&!item.getCategory().isBlank()){
-                if(item.getCategory().equals(category)){
-                    score+=20;
-                }
-            }
-        }
-        String content=item.getContent();
-        if(content!=null&&!content.isBlank()){
-            if(content.contains(query)){
-                score+=50;
-            }
-            for(int i=0;i<query.length()-1;i++){
-                if(content.contains(query.substring(i,i+2))){
-                    score+=2;
-                }
-            }
-        }
-
-        return score;
-    }
-    private List<KnowledgeSearchResponse> rerankResults(
-            String query,
-            String category,
-            List<KnowledgeSearchResponse> results
-    ){
-        if(results==null||results.isEmpty()){
-            return results;
-        }
-        return results.stream().sorted(
-                (a,b)->{
-                    int scoreA=calculateRerankScore(query,category,a);
-                    int scoreB=calculateRerankScore(query,category,b);
-                    return Integer.compare(scoreB,scoreA);
-                }
-
-        ).collect(Collectors.toList());
     }
 
 }
