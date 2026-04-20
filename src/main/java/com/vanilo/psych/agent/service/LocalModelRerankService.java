@@ -53,7 +53,7 @@ public class LocalModelRerankService implements RerankService {
                 return Double.compare(bScore,aScore);
             }).collect(Collectors.toList());
         } catch (Exception e) {
-            throw new UnsupportedOperationException("Local model reranker is not integrated yet",e);
+            throw new RuntimeException("Local model rerank failed", e);
         }
 
     }

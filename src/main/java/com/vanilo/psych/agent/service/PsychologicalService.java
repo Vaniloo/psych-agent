@@ -3,6 +3,8 @@ package com.vanilo.psych.agent.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vanilo.psych.agent.dto.AnalysisResult;
 import com.vanilo.psych.agent.dto.AnalyzeResponse;
+import com.vanilo.psych.agent.dto.ReportSummaryResponse;
+import com.vanilo.psych.agent.dto.TopRiskUserResponse;
 import com.vanilo.psych.agent.entity.PsychologicalReport;
 import com.vanilo.psych.agent.entity.User;
 import com.vanilo.psych.agent.enums.RiskLevel;
@@ -12,6 +14,9 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class PsychologicalService {
@@ -95,5 +100,39 @@ risk 判定规则（非常重要）：
         catch(Exception e){
             throw new RuntimeException("分析结果解析失败: " + response, e);
         }
+    }
+    public List<ReportSummaryResponse> getRecentReports(Long userId,int limit) {
+        if(limit <= 0||limit>50){
+            limit=20;
+        }
+        List<Object[]> rows=psychologicalReportRepository.findRecentReportsByUserId(userId,limit);
+        if(rows==null || rows.isEmpty()){
+            throw new RuntimeException("rows are empty");
+        }
+        return rows.stream().map(
+                row->new ReportSummaryResponse(
+                        ((Number)row[0]).longValue(),
+                        (String)row[1],
+                        (String)row[2],
+                        (String) row[3],
+                        ((Number)row[4]).doubleValue(),
+                        ((java.sql.Timestamp)row[5]).toLocalDateTime()
+                )
+        ).collect(Collectors.toList());
+    }
+    public List<TopRiskUserResponse> getTopRiskUsers(int limit) {
+        if(limit <= 0||limit>50){
+            limit=20;
+        }
+        List<Object[]> rows=psychologicalReportRepository.findTopRiskUsers(limit);
+        if(rows==null || rows.isEmpty()){
+            return Collections.emptyList();
+        }
+        return rows.stream().map(
+                row->new TopRiskUserResponse(
+                        row[0]==null?null:((Number)row[0]).longValue(),
+                        ((Number)row[1]).longValue()
+                )
+        ).toList();
     }
 }
