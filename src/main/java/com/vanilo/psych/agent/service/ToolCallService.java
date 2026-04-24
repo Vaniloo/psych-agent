@@ -1,8 +1,6 @@
 package com.vanilo.psych.agent.service;
 
-import com.vanilo.psych.agent.dto.DashboardResponse;
-import com.vanilo.psych.agent.dto.KnowledgeSearchResponse;
-import com.vanilo.psych.agent.dto.ToolCallRequest;
+import com.vanilo.psych.agent.dto.*;
 import com.vanilo.psych.agent.entity.User;
 import com.vanilo.psych.agent.repository.UserRepository;
 import org.springframework.stereotype.Service;
@@ -22,6 +20,25 @@ public class ToolCallService {
         this.knowledgeService = knowledgeService;
         this.userRepository = userRepository;
         this.psychologicalService = psychologicalService;
+    }
+    public  List<ToolInfoResponse> listTools(){
+        ToolInfoResponse searchKnowledge=new ToolInfoResponse(
+                "search_knowledge",
+                "在心理知识库中搜索相关内容",
+                List.of(
+                        new ToolParameterInfo("query","string",true,"用户的问题"),
+                        new ToolParameterInfo("category","string",false,"知识分类，如anxiety")
+                )
+        );
+        ToolInfoResponse getDashboard=new ToolInfoResponse(
+                "get_dashboard",
+                "获取用户心理报告和风险统计",
+                List.of (new ToolParameterInfo("username","string",true,"用户名"),
+                new ToolParameterInfo("recentLimit","integer",false,"最近报告数量"),
+                new ToolParameterInfo("topRiskLimit","integer",false,"高风险用户数量")
+                )
+        );
+        return List.of(searchKnowledge,getDashboard);
     }
 
     public Object call(ToolCallRequest request) {
