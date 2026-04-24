@@ -3,6 +3,7 @@ package com.vanilo.psych.agent.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vanilo.psych.agent.dto.AgentChatRequest;
+import com.vanilo.psych.agent.dto.AgentChatResponse;
 import com.vanilo.psych.agent.dto.ToolCallRequest;
 import com.vanilo.psych.agent.dto.ToolDecisionResponse;
 import org.springframework.ai.chat.client.ChatClient;
@@ -19,11 +20,15 @@ public class AgentService {
         this.objectMapper = objectMapper;
         this.toolCallService = toolCallService;
     }
-    public String chat(AgentChatRequest request) {
+    public AgentChatResponse chat(AgentChatRequest request) {
         String message = request.getMessage();
         ToolDecisionResponse response=decideTool(message);
         if (response != null && !response.isNeedTool()) {
-            return response.getReply();
+            return new AgentChatResponse(
+                    response.getReply(),
+                    false,
+                    null
+            );
         }
         Object toolResult= null;
         if (response != null) {
@@ -40,7 +45,11 @@ public class AgentService {
                     )
             );
         }
-        return generateFinalReply(message, toolResult);
+        return new AgentChatResponse(
+                generateFinalReply(message,toolResult),
+                true,
+                response.getTool()
+        );
     }
     private ToolDecisionResponse decideTool(String message){
         String result=chatClient.prompt()
