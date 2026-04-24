@@ -7,7 +7,10 @@ import com.vanilo.psych.agent.dto.AgentChatResponse;
 import com.vanilo.psych.agent.dto.ToolCallRequest;
 import com.vanilo.psych.agent.dto.ToolDecisionResponse;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+
+import java.util.HashMap;
 
 @Service
 public class AgentService {
@@ -20,12 +23,19 @@ public class AgentService {
         this.objectMapper = objectMapper;
         this.toolCallService = toolCallService;
     }
-    public AgentChatResponse chat(AgentChatRequest request) {
+    public AgentChatResponse chat(AgentChatRequest request,
+                                  String username) {
         String message = request.getMessage();
         ToolDecisionResponse response=decideTool(message);
         if (response != null && !response.isNeedTool()) {
+            String reply = response.getReply();
+
+            if (reply == null || reply.isBlank()) {
+                reply = generatePlainReply(message);
+            }
+
             return new AgentChatResponse(
-                    response.getReply(),
+                    reply,
                     false,
                     null
             );
@@ -35,8 +45,11 @@ public class AgentService {
             if(response.getTool() == null||response.getTool().isBlank()) {
                 throw new RuntimeException("Tool required");
             }
-            if(response.getArguments() == null||response.getArguments().isEmpty()){
-                throw new RuntimeException("Arguments required");
+            if (response.getArguments() == null) {
+                response.setArguments(new HashMap<>());
+            }
+            if("get_dashboard".equals(response.getTool())){
+                response.getArguments().put("username",username);
             }
             toolResult = toolCallService.call(
                     new ToolCallRequest(
@@ -44,6 +57,7 @@ public class AgentService {
                             response.getArguments()
                     )
             );
+
         }
         return new AgentChatResponse(
                 generateFinalReply(message,toolResult),
@@ -82,10 +96,9 @@ search_knowledge 参数：
 - category: string，可选，如果明显是焦虑相关可填 anxiety
 
 get_dashboard 参数：
-- username: string，必填
 - recentLimit: integer，可选
 - topRiskLimit: integer，可选
-如果用户没有明确提供 username，就默认填 "yjh69"
+get_dashboard 的 username 会由后端根据登录态自动注入，模型不需要生成 username。
                         """)
                 .user(message)
                 .call()
@@ -132,6 +145,17 @@ get_dashboard 参数：
                                 %s
                                 """.formatted(message,toolResultJson)
                 )
+                .call()
+                .content();
+    }
+    private String generatePlainReply(String message){
+        return chatClient.prompt()
+                .system("""
+                        你是一个温和、自然、有一点幽默感的聊天助手。
+                        请直接回复用户，不要调用工具。
+                        回答要简洁、友好
+                        """)
+                .user(message)
                 .call()
                 .content();
     }
