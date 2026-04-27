@@ -1,8 +1,6 @@
 package com.vanilo.psych.agent.service;
-
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
-
 import java.time.Duration;
 
 @Service
