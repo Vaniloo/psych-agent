@@ -34,3 +34,39 @@ build/
 risk_records.xlsx
 application.yaml
 app.py
+
+# Java / Maven
+target/
+backend/target/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Logs
+*.log
+
+# Env / secrets
+.env
+*.env
+application-local.yml
+application-dev.yml
+backend/src/main/resources/application-local.yml
+backend/src/main/resources/application-dev.yml
+
+# Runtime files
+risk_records.xlsx
+backend/risk_records.xlsx
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Python / reranker
+.venv/
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
