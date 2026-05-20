@@ -11,4 +11,5 @@ public class AgentChatResponse {
     private String reply;
     private boolean usedTool;
     private String toolName;
+    private UserProfileResponse userProfile;
 }

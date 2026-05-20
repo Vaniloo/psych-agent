@@ -19,6 +19,10 @@ public class ChatService {
 
 
     public String ragChat(String message){
+        return ragChat(message, null);
+    }
+
+    public String ragChat(String message, String memoryContext){
         List<KnowledgeSearchResponse> knowledges = knowledgeService.searchKnowledge(message);
 
         String knowledgeContext = knowledges.isEmpty()?"暂无相关知识": IntStream.range(0, knowledges.size())
@@ -35,28 +39,50 @@ public class ChatService {
 你是一名心理支持助手，请优先参考提供的知识库内容回答用户问题。
 如果知识库内容不足，可以结合常识进行温和、谨慎的补充。
 回答时不要编造具体医学结论，不要做确定性诊断。
+如果提供了多级记忆和用户画像，请只把它们作为个性化支持背景，不要直接暴露内部字段。
                         """)
                 .user("""
+                    多级记忆和用户画像：
+                    %s
+
                     参考知识：
                     %s
 
                     用户问题：
                     %s
-                    """.formatted(knowledgeContext, message))
+                    """.formatted(valueOrDefault(memoryContext, "暂无"), knowledgeContext, message))
                 .call()
                 .content();
     }
     public String plainChat(String message){
+        return plainChat(message, null);
+    }
+
+    public String plainChat(String message, String memoryContext){
         if(message==null||message.isBlank()){
             throw new RuntimeException("message不能为空");
         }
         return chatClient.prompt()
                 .system("""
                        你是一名知识渊博并幽默的人，你的任务是跟用户聊天并让人保持心情愉悦。
+                       如果提供了多级记忆和用户画像，请用于延续对话，但不要直接暴露内部字段。
                        """)
-                .user(message)
+                .user("""
+                        多级记忆和用户画像：
+                        %s
+
+                        用户消息：
+                        %s
+                        """.formatted(valueOrDefault(memoryContext, "暂无"), message))
                 .call()
                 .content();
+    }
+
+    private String valueOrDefault(String value, String defaultValue) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        return value;
     }
 
 }

@@ -14,8 +14,16 @@ public class MessageRouterService {
     private final MailAlertService mailAlertService;
     private final RiskAlertLockService riskAlertLockService;
     private final UserMessageLockService userMessageLockService;
+    private final ConversationMemoryService conversationMemoryService;
 
-    public MessageRouterService(IntentService intentService, ChatService chatService, PsychologicalService psychologicalService, ExcelRecordService excelRecordService, MailAlertService mailAlertService, RiskAlertLockService riskAlertLockService, UserMessageLockService userMessageLockService) {
+    public MessageRouterService(IntentService intentService,
+                                ChatService chatService,
+                                PsychologicalService psychologicalService,
+                                ExcelRecordService excelRecordService,
+                                MailAlertService mailAlertService,
+                                RiskAlertLockService riskAlertLockService,
+                                UserMessageLockService userMessageLockService,
+                                ConversationMemoryService conversationMemoryService) {
         this.intentService = intentService;
         this.chatService = chatService;
         this.psychologicalService = psychologicalService;
@@ -23,6 +31,7 @@ public class MessageRouterService {
         this.mailAlertService = mailAlertService;
         this.riskAlertLockService = riskAlertLockService;
         this.userMessageLockService = userMessageLockService;
+        this.conversationMemoryService = conversationMemoryService;
     }
     public MessageResponse route(String message,String username){
         if(message==null||username==null||message.isBlank()||username.isBlank()){
@@ -32,13 +41,18 @@ public class MessageRouterService {
         if(!isLocked){
             throw new RuntimeException("请勿频繁输入相同内容");
         }
+        String memoryContext = conversationMemoryService.buildMemoryContext(username);
         IntentResult result = intentService.classify(message);
         switch (result.getIntent()){
-            case CHAT:return new MessageResponse(
-                    result.getIntent(),
-                    chatService.plainChat(message),
-                    null
-            );
+            case CHAT:{
+                String reply = chatService.plainChat(message, memoryContext);
+                conversationMemoryService.rememberTurn(username, message, reply);
+                return new MessageResponse(
+                        result.getIntent(),
+                        reply,
+                        null
+                );
+            }
 
 
             case CONSULT, RISK: {
@@ -56,9 +70,11 @@ public class MessageRouterService {
                         System.out.println("Locked");
                     }
                 }
+                String reply = chatService.ragChat(message, memoryContext);
+                conversationMemoryService.rememberTurn(username, message, reply);
                 return  new MessageResponse(
                         result.getIntent(),
-                        chatService.ragChat(message),
+                        reply,
                         response
                 );
 
