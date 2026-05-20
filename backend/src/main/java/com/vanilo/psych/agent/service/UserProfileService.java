@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.function.Consumer;
 
 @Service
 public class UserProfileService {
@@ -31,24 +32,12 @@ public class UserProfileService {
     public UserProfileResponse updateProfile(String username, UserProfileUpdateRequest request) {
         User user = findUser(username);
         UserProfile profile = getOrCreateProfile(user);
-        if (request.getProfileSummary() != null) {
-            profile.setProfileSummary(request.getProfileSummary());
-        }
-        if (request.getConcerns() != null) {
-            profile.setConcerns(request.getConcerns());
-        }
-        if (request.getPreferences() != null) {
-            profile.setPreferences(request.getPreferences());
-        }
-        if (request.getCopingStrategies() != null) {
-            profile.setCopingStrategies(request.getCopingStrategies());
-        }
-        if (request.getRiskSignals() != null) {
-            profile.setRiskSignals(request.getRiskSignals());
-        }
-        if (request.getSupportGoals() != null) {
-            profile.setSupportGoals(request.getSupportGoals());
-        }
+        updateIfPresent(request.getProfileSummary(), profile::setProfileSummary);
+        updateIfPresent(request.getConcerns(), profile::setConcerns);
+        updateIfPresent(request.getPreferences(), profile::setPreferences);
+        updateIfPresent(request.getCopingStrategies(), profile::setCopingStrategies);
+        updateIfPresent(request.getRiskSignals(), profile::setRiskSignals);
+        updateIfPresent(request.getSupportGoals(), profile::setSupportGoals);
         profile.setUpdatedAt(LocalDateTime.now());
         return toResponse(userProfileRepository.save(profile));
     }
@@ -82,5 +71,11 @@ public class UserProfileService {
 
     private User findUser(String username) {
         return userRepository.findByUsername(username).orElseThrow(() -> new RuntimeException("用户不存在！"));
+    }
+
+    private void updateIfPresent(String value, Consumer<String> setter) {
+        if (value != null) {
+            setter.accept(value);
+        }
     }
 }

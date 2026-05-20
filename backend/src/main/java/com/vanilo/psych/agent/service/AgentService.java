@@ -7,7 +7,6 @@ import com.vanilo.psych.agent.dto.AgentChatResponse;
 import com.vanilo.psych.agent.dto.ToolCallRequest;
 import com.vanilo.psych.agent.dto.ToolDecisionResponse;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;

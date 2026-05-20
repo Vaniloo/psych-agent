@@ -8,8 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
-import java.util.Objects;
-
 
 
 public interface PsychologicalReportRepository extends JpaRepository<PsychologicalReport, Long> {
@@ -31,12 +29,4 @@ public interface PsychologicalReportRepository extends JpaRepository<Psychologic
     LIMIT :limit
     """, nativeQuery = true)
     List<Object[]>findTopRiskUsers(@Param("limit") int limit);
-    @Query(
-            value= """
-    SELECT id
-    FROM users
-    WHERE username= :username
-    """,nativeQuery = true
-    )
-    Long findIdByUserId(@Param("username") String username);
 }

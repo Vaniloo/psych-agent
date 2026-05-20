@@ -160,18 +160,7 @@ public class ConversationMemoryService {
 
         try {
             Map<String, String> updates = objectMapper.readValue(extractJson(json), new TypeReference<>() {});
-            memory.setSummary(limit(updates.get("summary"), 1000));
-            memory.setLongTermMemory(limit(updates.get("longTermMemory"), 1000));
-            memory.setUpdatedAt(LocalDateTime.now());
-
-            profile.setProfileSummary(limit(updates.get("profileSummary"), 1000));
-            profile.setConcerns(limit(updates.get("concerns"), 1000));
-            profile.setPreferences(limit(updates.get("preferences"), 1000));
-            profile.setCopingStrategies(limit(updates.get("copingStrategies"), 1000));
-            profile.setRiskSignals(limit(updates.get("riskSignals"), 1000));
-            profile.setSupportGoals(limit(updates.get("supportGoals"), 1000));
-            profile.setUpdatedAt(LocalDateTime.now());
-
+            applyMemoryUpdates(memory, profile, updates);
             conversationMemoryRepository.save(memory);
             userProfileRepository.save(profile);
         } catch (Exception e) {
@@ -188,6 +177,20 @@ public class ConversationMemoryService {
         message.setContent(limit(content, 4000));
         message.setCreatedAt(LocalDateTime.now());
         conversationMessageRepository.save(message);
+    }
+
+    private void applyMemoryUpdates(ConversationMemory memory, UserProfile profile, Map<String, String> updates) {
+        memory.setSummary(limit(updates.get("summary"), 1000));
+        memory.setLongTermMemory(limit(updates.get("longTermMemory"), 1000));
+        memory.setUpdatedAt(LocalDateTime.now());
+
+        profile.setProfileSummary(limit(updates.get("profileSummary"), 1000));
+        profile.setConcerns(limit(updates.get("concerns"), 1000));
+        profile.setPreferences(limit(updates.get("preferences"), 1000));
+        profile.setCopingStrategies(limit(updates.get("copingStrategies"), 1000));
+        profile.setRiskSignals(limit(updates.get("riskSignals"), 1000));
+        profile.setSupportGoals(limit(updates.get("supportGoals"), 1000));
+        profile.setUpdatedAt(LocalDateTime.now());
     }
 
     private ConversationMemory getOrCreateMemory(User user) {
