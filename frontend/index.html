@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Psych Agent</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">PA</div>
+          <div>
+            <h1>Psych Agent</h1>
+            <p id="connectionLabel">未连接</p>
+          </div>
+        </div>
+
+        <nav class="nav-tabs" aria-label="主导航">
+          <button class="nav-tab active" data-view="chatView" type="button">对话</button>
+          <button class="nav-tab" data-view="profileView" type="button">画像</button>
+          <button class="nav-tab" data-view="reportsView" type="button">报告</button>
+          <button class="nav-tab" data-view="knowledgeView" type="button">知识库</button>
+          <button class="nav-tab" data-view="settingsView" type="button">配置</button>
+        </nav>
+
+        <section class="auth-panel" aria-label="登录">
+          <div class="field-row">
+            <label for="username">账号</label>
+            <input id="username" autocomplete="username" placeholder="username" />
+          </div>
+          <div class="field-row">
+            <label for="password">密码</label>
+            <input id="password" autocomplete="current-password" type="password" placeholder="password" />
+          </div>
+          <div class="button-row">
+            <button id="loginBtn" class="primary-action" type="button">登录</button>
+            <button id="registerBtn" type="button">注册</button>
+          </div>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <section id="chatView" class="view active-view">
+          <header class="view-header">
+            <div>
+              <h2>咨询对话</h2>
+              <p>智能体会使用知识库、报告、记忆和用户画像生成回复。</p>
+            </div>
+            <div class="segmented">
+              <button class="mode-btn active" data-mode="agent" type="button">Agent</button>
+              <button class="mode-btn" data-mode="message" type="button">Route</button>
+            </div>
+          </header>
+          <div id="chatLog" class="chat-log" aria-live="polite"></div>
+          <form id="chatForm" class="composer">
+            <textarea id="messageInput" rows="3" placeholder="输入想聊的内容"></textarea>
+            <button class="send-button" type="submit">发送</button>
+          </form>
+        </section>
+
+        <section id="profileView" class="view">
+          <header class="view-header">
+            <div>
+              <h2>用户画像</h2>
+              <p>画像会随对话更新，也可以手动修正。</p>
+            </div>
+            <button id="refreshProfileBtn" type="button">刷新</button>
+          </header>
+          <form id="profileForm" class="profile-grid">
+            <label>概览<textarea id="profileSummary" rows="4"></textarea></label>
+            <label>主要困扰<textarea id="concerns" rows="4"></textarea></label>
+            <label>偏好<textarea id="preferences" rows="4"></textarea></label>
+            <label>有效应对方式<textarea id="copingStrategies" rows="4"></textarea></label>
+            <label>风险信号<textarea id="riskSignals" rows="4"></textarea></label>
+            <label>支持目标<textarea id="supportGoals" rows="4"></textarea></label>
+            <button class="primary-action profile-save" type="submit">保存画像</button>
+          </form>
+        </section>
+
+        <section id="reportsView" class="view">
+          <header class="view-header">
+            <div>
+              <h2>心理报告</h2>
+              <p>查看当前账号最近分析结果和风险概览。</p>
+            </div>
+            <button id="refreshReportsBtn" type="button">刷新</button>
+          </header>
+          <div id="dashboardGrid" class="dashboard-grid"></div>
+          <div id="reportsList" class="list-panel"></div>
+        </section>
+
+        <section id="knowledgeView" class="view">
+          <header class="view-header">
+            <div>
+              <h2>知识库</h2>
+              <p>添加、检索和浏览心理支持知识。</p>
+            </div>
+            <button id="refreshKnowledgeBtn" type="button">刷新</button>
+          </header>
+          <div class="knowledge-layout">
+            <form id="knowledgeForm" class="stack-panel">
+              <input id="knowledgeCategory" placeholder="分类，例如 anxiety" />
+              <input id="knowledgeSource" placeholder="来源" />
+              <textarea id="knowledgeContent" rows="7" placeholder="知识内容"></textarea>
+              <button class="primary-action" type="submit">添加知识</button>
+            </form>
+            <div class="stack-panel">
+              <div class="search-row">
+                <input id="knowledgeQuery" placeholder="检索关键词" />
+                <button id="searchKnowledgeBtn" type="button">搜索</button>
+              </div>
+              <div id="knowledgeResults" class="list-panel"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="settingsView" class="view">
+          <header class="view-header">
+            <div>
+              <h2>本地配置</h2>
+              <p>前端 API 与后端本地服务默认值保持一致。</p>
+            </div>
+            <button id="saveConfigBtn" type="button">保存 API</button>
+          </header>
+          <div class="settings-grid">
+            <label>Backend API<input id="apiBaseUrl" /></label>
+            <label>MySQL<input id="mysqlConfig" disabled /></label>
+            <label>Redis<input id="redisConfig" disabled /></label>
+            <label>Ollama<input id="ollamaConfig" disabled /></label>
+            <label>Chroma<input id="chromaConfig" disabled /></label>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" role="status"></div>
+    <script src="./config.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
