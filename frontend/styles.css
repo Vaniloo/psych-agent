@@ -402,6 +402,12 @@ textarea:focus {
   gap: 14px;
 }
 
+.admin-memory-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  gap: 14px;
+}
+
 .stack-panel {
   display: grid;
   gap: 10px;
@@ -444,6 +450,7 @@ textarea:focus {
   .profile-grid,
   .settings-grid,
   .knowledge-layout,
+  .admin-memory-layout,
   .composer {
     grid-template-columns: 1fr;
   }

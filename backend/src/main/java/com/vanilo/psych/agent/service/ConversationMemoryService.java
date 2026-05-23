@@ -2,6 +2,7 @@ package com.vanilo.psych.agent.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vanilo.psych.agent.dto.AdminMemoryResponse;
 import com.vanilo.psych.agent.dto.ConversationMessageResponse;
 import com.vanilo.psych.agent.dto.ConversationSessionResponse;
 import com.vanilo.psych.agent.dto.UserProfileResponse;
@@ -131,6 +132,21 @@ public class ConversationMemoryService {
                 .stream()
                 .map(this::toMessageResponse)
                 .toList();
+    }
+
+    public List<AdminMemoryResponse> listAdminMemories() {
+        return userRepository.findAll()
+                .stream()
+                .map(this::toAdminMemoryResponse)
+                .toList();
+    }
+
+    public AdminMemoryResponse getAdminMemory(String username) {
+        return toAdminMemoryResponse(findUser(username));
+    }
+
+    public List<ConversationMessageResponse> listAdminMessages(String username, Long sessionId) {
+        return listMessages(username, sessionId);
     }
 
     private void updateMemoryAndProfile(User user, ConversationSession session, String userMessage, String assistantReply) {
@@ -288,6 +304,22 @@ public class ConversationMemoryService {
                 message.getRole(),
                 message.getContent(),
                 message.getCreatedAt()
+        );
+    }
+
+    private AdminMemoryResponse toAdminMemoryResponse(User user) {
+        ConversationMemory memory = getOrCreateMemory(user);
+        UserProfile profile = userProfileService.getOrCreateProfile(user);
+        return new AdminMemoryResponse(
+                user.getUsername(),
+                memory.getSummary(),
+                memory.getLongTermMemory(),
+                memory.getUpdatedAt(),
+                userProfileService.toResponse(profile),
+                conversationSessionRepository.findByUserOrderByUpdatedAtDesc(user)
+                        .stream()
+                        .map(this::toSessionResponse)
+                        .toList()
         );
     }
 

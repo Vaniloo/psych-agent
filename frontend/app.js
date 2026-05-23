@@ -6,6 +6,7 @@ const state = {
   chatMode: "agent",
   currentSessionId: null,
   profiles: [],
+  adminMemories: [],
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -203,9 +204,9 @@ function addMessage(role, content) {
 function bindProfile() {
   $("#refreshProfileBtn").addEventListener("click", refreshProfile);
   $("#profileUserSelect").addEventListener("change", () => {
-    const profile = state.profiles.find((item) => item.username === $("#profileUserSelect").value);
-    if (profile) {
-      fillProfile(profile);
+    const memory = state.adminMemories.find((item) => item.username === $("#profileUserSelect").value);
+    if (memory) {
+      fillAdminMemory(memory);
     }
   });
   $("#profileForm").addEventListener("submit", async (event) => {
@@ -221,6 +222,9 @@ function bindProfile() {
         body: JSON.stringify(readProfileForm()),
       });
       state.profiles = state.profiles.map((profile) => profile.username === data.username ? data : profile);
+      state.adminMemories = state.adminMemories.map((memory) =>
+        memory.username === data.username ? { ...memory, profile: data } : memory
+      );
       fillProfile(data);
       toast("画像已保存");
     } catch (error) {
@@ -232,7 +236,8 @@ function bindProfile() {
 async function refreshProfile() {
   if (!isAdmin()) return;
   try {
-    state.profiles = await api("/profile");
+    state.adminMemories = await api("/admin/memories");
+    state.profiles = state.adminMemories.map((memory) => memory.profile);
     renderProfileUsers();
   } catch (error) {
     toast(error.message);
@@ -262,12 +267,53 @@ function fillProfile(profile) {
   $("#supportGoals").value = profile.supportGoals || "";
 }
 
+function fillAdminMemory(memory) {
+  fillProfile(memory.profile || {});
+  $("#memorySummary").value = memory.summary || "";
+  $("#longTermMemory").value = memory.longTermMemory || "";
+  renderAdminSessions(memory);
+  $("#adminMessageList").innerHTML = empty("选择一个会话查看消息");
+}
+
 function renderProfileUsers() {
-  $("#profileUserSelect").innerHTML = state.profiles
-    .map((profile) => `<option value="${escapeHtml(profile.username)}">${escapeHtml(profile.username)}</option>`)
+  $("#profileUserSelect").innerHTML = state.adminMemories
+    .map((memory) => `<option value="${escapeHtml(memory.username)}">${escapeHtml(memory.username)}</option>`)
     .join("");
-  if (state.profiles.length > 0) {
-    fillProfile(state.profiles[0]);
+  if (state.adminMemories.length > 0) {
+    fillAdminMemory(state.adminMemories[0]);
+  }
+}
+
+function renderAdminSessions(memory) {
+  const sessions = memory.sessions || [];
+  $("#adminSessionList").innerHTML = sessions.length
+    ? sessions.map((session) => `
+      <button class="conversation-item" data-admin-session-id="${session.id}" data-admin-username="${escapeHtml(memory.username)}" type="button">
+        ${escapeHtml(session.title || "未命名对话")}
+        <span>${escapeHtml(formatTime(session.updatedAt))}</span>
+      </button>
+      <div class="list-item"><p>${escapeHtml(session.summary || "暂无会话摘要")}</p></div>
+    `).join("")
+    : empty("暂无会话");
+  $$("[data-admin-session-id]").forEach((button) => {
+    button.addEventListener("click", () => loadAdminMessages(button.dataset.adminUsername, Number(button.dataset.adminSessionId)));
+  });
+}
+
+async function loadAdminMessages(username, sessionId) {
+  try {
+    const messages = await api(`/admin/memories/${encodeURIComponent(username)}/sessions/${sessionId}/messages`);
+    $("#adminMessageList").innerHTML = messages.length
+      ? messages.map((message) => `
+        <article class="list-item">
+          <h3>${escapeHtml(message.role === "assistant" ? "助手" : "用户")}</h3>
+          <p>${escapeHtml(formatTime(message.createdAt))}</p>
+          <p>${escapeHtml(message.content || "")}</p>
+        </article>
+      `).join("")
+      : empty("暂无消息");
+  } catch (error) {
+    toast(error.message);
   }
 }
 

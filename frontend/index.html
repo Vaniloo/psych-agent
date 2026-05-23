@@ -72,13 +72,15 @@
         <section id="profileView" class="view admin-only">
           <header class="view-header">
             <div>
-              <h2>用户画像</h2>
-              <p>画像会随对话更新，也可以手动修正。</p>
+              <h2>记忆中心</h2>
+              <p>管理员查看用户画像、长期记忆、会话摘要和历史消息。</p>
             </div>
             <button id="refreshProfileBtn" type="button">刷新</button>
           </header>
           <form id="profileForm" class="profile-grid">
             <label class="profile-user-select">用户<select id="profileUserSelect"></select></label>
+            <label>中期记忆<textarea id="memorySummary" rows="4" disabled></textarea></label>
+            <label>长期记忆<textarea id="longTermMemory" rows="4" disabled></textarea></label>
             <label>概览<textarea id="profileSummary" rows="4"></textarea></label>
             <label>主要困扰<textarea id="concerns" rows="4"></textarea></label>
             <label>偏好<textarea id="preferences" rows="4"></textarea></label>
@@ -87,6 +89,16 @@
             <label>支持目标<textarea id="supportGoals" rows="4"></textarea></label>
             <button class="primary-action profile-save" type="submit">保存画像</button>
           </form>
+          <div class="admin-memory-layout">
+            <section class="stack-panel">
+              <div class="panel-title">会话摘要</div>
+              <div id="adminSessionList" class="conversation-list"></div>
+            </section>
+            <section class="stack-panel">
+              <div class="panel-title">历史消息</div>
+              <div id="adminMessageList" class="list-panel"></div>
+            </section>
+          </div>
         </section>
 
         <section id="reportsView" class="view">

@@ -29,6 +29,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth->auth
                         .requestMatchers("/auth/**","/test/**","/chat").permitAll()
                         .requestMatchers("/reports/my","/reports/dashboard","/chat/analyze","/message","/agent/chat","/conversations/**").authenticated()
+                        .requestMatchers("/admin/**").hasRole("ADMIN")
                         .requestMatchers("/profile","/profile/**").hasRole("ADMIN")
                         .requestMatchers("/knowledge/**").hasRole("ADMIN")
                         .requestMatchers("/reports/**").hasRole("ADMIN")
