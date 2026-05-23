@@ -46,8 +46,7 @@ public class AgentService {
             return new AgentChatResponse(
                     reply,
                     false,
-                    null,
-                    conversationMemoryService.getProfile(username)
+                    null
             );
         }
         Object toolResult= null;
@@ -74,8 +73,7 @@ public class AgentService {
         return new AgentChatResponse(
                 reply,
                 true,
-                response.getTool(),
-                conversationMemoryService.getProfile(username)
+                response.getTool()
         );
     }
     private ToolDecisionResponse decideTool(String message){

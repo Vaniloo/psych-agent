@@ -18,6 +18,7 @@ function init() {
   bindKnowledge();
   bindSettings();
   syncConnectionLabel();
+  applyRoleVisibility();
   hydrateSettings();
   addMessage("assistant", "你好，我是 Psych Agent。登录后可以开始对话、查看画像和报告。");
   if (state.token) {
@@ -115,6 +116,7 @@ function bindAuth() {
       localStorage.setItem("psychAgentToken", state.token);
       localStorage.setItem("psychAgentUser", JSON.stringify(state.user));
       syncConnectionLabel();
+      applyRoleVisibility();
       toast("登录成功");
       await refreshProfile();
     } catch (error) {
@@ -164,9 +166,6 @@ function bindChat() {
         body: JSON.stringify({ message }),
       });
       addMessage("assistant", data.reply || data);
-      if (data.userProfile) {
-        fillProfile(data.userProfile);
-      }
     } catch (error) {
       addMessage("meta", error.message);
     }
@@ -295,6 +294,7 @@ function bindKnowledge() {
 }
 
 async function loadKnowledge() {
+  if (!isAdmin()) return;
   try {
     const data = await api("/knowledge/all");
     renderKnowledge(data || []);
@@ -304,6 +304,7 @@ async function loadKnowledge() {
 }
 
 async function searchKnowledge() {
+  if (!isAdmin()) return;
   const query = $("#knowledgeQuery").value.trim();
   if (!query) {
     await loadKnowledge();
@@ -343,6 +344,18 @@ function bindSettings() {
     syncConnectionLabel();
     toast("API 地址已保存");
   });
+}
+
+function applyRoleVisibility() {
+  const admin = isAdmin();
+  $$(".admin-only").forEach((element) => element.classList.toggle("hidden", !admin));
+  if (!admin && $(".nav-tab.active")?.classList.contains("admin-only")) {
+    $(".nav-tab[data-view='chatView']").click();
+  }
+}
+
+function isAdmin() {
+  return state.user?.role === "ADMIN";
 }
 
 function hydrateSettings() {

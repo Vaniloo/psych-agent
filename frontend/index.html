@@ -21,8 +21,8 @@
           <button class="nav-tab active" data-view="chatView" type="button">对话</button>
           <button class="nav-tab" data-view="profileView" type="button">画像</button>
           <button class="nav-tab" data-view="reportsView" type="button">报告</button>
-          <button class="nav-tab" data-view="knowledgeView" type="button">知识库</button>
-          <button class="nav-tab" data-view="settingsView" type="button">配置</button>
+          <button class="nav-tab admin-only" data-view="knowledgeView" type="button">知识库</button>
+          <button class="nav-tab admin-only" data-view="settingsView" type="button">配置</button>
         </nav>
 
         <section class="auth-panel" aria-label="登录">
@@ -91,7 +91,7 @@
           <div id="reportsList" class="list-panel"></div>
         </section>
 
-        <section id="knowledgeView" class="view">
+        <section id="knowledgeView" class="view admin-only">
           <header class="view-header">
             <div>
               <h2>知识库</h2>
@@ -116,7 +116,7 @@
           </div>
         </section>
 
-        <section id="settingsView" class="view">
+        <section id="settingsView" class="view admin-only">
           <header class="view-header">
             <div>
               <h2>本地配置</h2>

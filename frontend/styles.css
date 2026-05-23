@@ -182,6 +182,10 @@ textarea:focus {
   display: none;
 }
 
+.hidden {
+  display: none !important;
+}
+
 .active-view {
   display: grid;
   gap: 18px;
