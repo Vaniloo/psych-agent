@@ -25,26 +25,52 @@ function init() {
   }
 }
 
-function api(path, options = {}) {
+async function api(path, options = {}) {
   const headers = {
     "Content-Type": "application/json",
     ...(options.headers || {}),
   };
-  if (state.token) {
+  if (state.token && options.auth !== false) {
     headers.Authorization = `Bearer ${state.token}`;
   }
 
-  return fetch(`${state.apiBaseUrl}${path}`, {
-    ...options,
-    headers,
-  }).then(async (response) => {
+  const { auth, ...fetchOptions } = options;
+  return requestJson(path, { ...fetchOptions, headers }, true);
+}
+
+async function requestJson(path, options, allowFallback) {
+  try {
+    const response = await fetch(`${state.apiBaseUrl}${path}`, options);
     const text = await response.text();
     const data = text ? parseJson(text) : null;
-    if (!response.ok) {
+    if (!response.ok || data?.success === false) {
       throw new Error(data?.message || text || `请求失败：${response.status}`);
     }
     return data ?? text;
-  });
+  } catch (error) {
+    const fallbackUrl = getLoopbackFallbackUrl(state.apiBaseUrl);
+    if (allowFallback && fallbackUrl) {
+      state.apiBaseUrl = fallbackUrl;
+      localStorage.setItem("psychAgentApiBaseUrl", state.apiBaseUrl);
+      hydrateSettings();
+      syncConnectionLabel();
+      return requestJson(path, options, false);
+    }
+    if (error instanceof TypeError) {
+      throw new Error(`无法连接后端：${state.apiBaseUrl}。请确认后端已启动，并打开 ${state.apiBaseUrl}/test/ping 检查。`);
+    }
+    throw error;
+  }
+}
+
+function getLoopbackFallbackUrl(apiBaseUrl) {
+  if (apiBaseUrl.includes("localhost")) {
+    return apiBaseUrl.replace("localhost", "127.0.0.1");
+  }
+  if (apiBaseUrl.includes("127.0.0.1")) {
+    return apiBaseUrl.replace("127.0.0.1", "localhost");
+  }
+  return "";
 }
 
 function parseJson(text) {
@@ -81,6 +107,7 @@ function bindAuth() {
     try {
       const data = await api("/auth/login", {
         method: "POST",
+        auth: false,
         body: JSON.stringify(payload),
       });
       state.token = data.token;
@@ -101,6 +128,7 @@ function bindAuth() {
     try {
       await api("/auth/register", {
         method: "POST",
+        auth: false,
         body: JSON.stringify({ ...payload, role: "USER" }),
       });
       toast("注册成功，可以登录了");

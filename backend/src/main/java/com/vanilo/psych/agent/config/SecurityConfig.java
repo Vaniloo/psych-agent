@@ -21,13 +21,14 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
+                .cors(cors -> {})
                 .csrf(csrf -> csrf.disable())
                 .formLogin(formLogin -> formLogin.disable())
                 .userDetailsService(customUserDetailsService)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth->auth
                         .requestMatchers("/auth/**","/test/**","/chat").permitAll()
-                        .requestMatchers("/reports/my","/chat/analyze","/message","/agent/chat","/profile").authenticated()
+                        .requestMatchers("/reports/my","/reports/dashboard","/chat/analyze","/message","/agent/chat","/profile").authenticated()
                         .requestMatchers("/reports/**").hasRole("ADMIN")
                         .anyRequest().permitAll()
                 )
