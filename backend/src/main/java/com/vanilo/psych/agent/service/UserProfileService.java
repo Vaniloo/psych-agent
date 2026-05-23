@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.function.Consumer;
 
 @Service
@@ -26,6 +27,13 @@ public class UserProfileService {
         User user = findUser(username);
         UserProfile profile = getOrCreateProfile(user);
         return toResponse(profile);
+    }
+
+    public List<UserProfileResponse> listAllProfiles() {
+        return userRepository.findAll()
+                .stream()
+                .map(user -> toResponse(getOrCreateProfile(user)))
+                .toList();
     }
 
     @Transactional
@@ -59,6 +67,7 @@ public class UserProfileService {
 
     UserProfileResponse toResponse(UserProfile profile) {
         return new UserProfileResponse(
+                profile.getUser().getUsername(),
                 profile.getProfileSummary(),
                 profile.getConcerns(),
                 profile.getPreferences(),

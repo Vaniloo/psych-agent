@@ -19,7 +19,7 @@
 
         <nav class="nav-tabs" aria-label="主导航">
           <button class="nav-tab active" data-view="chatView" type="button">对话</button>
-          <button class="nav-tab" data-view="profileView" type="button">画像</button>
+          <button class="nav-tab admin-only" data-view="profileView" type="button">画像</button>
           <button class="nav-tab" data-view="reportsView" type="button">报告</button>
           <button class="nav-tab admin-only" data-view="knowledgeView" type="button">知识库</button>
           <button class="nav-tab admin-only" data-view="settingsView" type="button">配置</button>
@@ -48,19 +48,28 @@
               <h2>咨询对话</h2>
               <p>智能体会使用知识库、报告、记忆和用户画像生成回复。</p>
             </div>
-            <div class="segmented">
-              <button class="mode-btn active" data-mode="agent" type="button">Agent</button>
-              <button class="mode-btn" data-mode="message" type="button">Route</button>
+            <div class="header-actions">
+              <button id="newChatBtn" type="button">新对话</button>
+              <div class="segmented">
+                <button class="mode-btn active" data-mode="agent" type="button">Agent</button>
+                <button class="mode-btn" data-mode="message" type="button">Route</button>
+              </div>
             </div>
           </header>
-          <div id="chatLog" class="chat-log" aria-live="polite"></div>
+          <div class="chat-layout">
+            <aside class="history-panel">
+              <div class="panel-title">历史对话</div>
+              <div id="conversationList" class="conversation-list"></div>
+            </aside>
+            <div id="chatLog" class="chat-log" aria-live="polite"></div>
+          </div>
           <form id="chatForm" class="composer">
             <textarea id="messageInput" rows="3" placeholder="输入想聊的内容"></textarea>
             <button class="send-button" type="submit">发送</button>
           </form>
         </section>
 
-        <section id="profileView" class="view">
+        <section id="profileView" class="view admin-only">
           <header class="view-header">
             <div>
               <h2>用户画像</h2>
@@ -69,6 +78,7 @@
             <button id="refreshProfileBtn" type="button">刷新</button>
           </header>
           <form id="profileForm" class="profile-grid">
+            <label class="profile-user-select">用户<select id="profileUserSelect"></select></label>
             <label>概览<textarea id="profileSummary" rows="4"></textarea></label>
             <label>主要困扰<textarea id="concerns" rows="4"></textarea></label>
             <label>偏好<textarea id="preferences" rows="4"></textarea></label>

@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @NoArgsConstructor
 public class UserProfileResponse {
+    private String username;
     private String profileSummary;
     private String concerns;
     private String preferences;

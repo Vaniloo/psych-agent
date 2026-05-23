@@ -2,13 +2,17 @@ package com.vanilo.psych.agent.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vanilo.psych.agent.dto.ConversationMessageResponse;
+import com.vanilo.psych.agent.dto.ConversationSessionResponse;
 import com.vanilo.psych.agent.dto.UserProfileResponse;
 import com.vanilo.psych.agent.entity.ConversationMemory;
 import com.vanilo.psych.agent.entity.ConversationMessage;
+import com.vanilo.psych.agent.entity.ConversationSession;
 import com.vanilo.psych.agent.entity.User;
 import com.vanilo.psych.agent.entity.UserProfile;
 import com.vanilo.psych.agent.repository.ConversationMemoryRepository;
 import com.vanilo.psych.agent.repository.ConversationMessageRepository;
+import com.vanilo.psych.agent.repository.ConversationSessionRepository;
 import com.vanilo.psych.agent.repository.UserProfileRepository;
 import com.vanilo.psych.agent.repository.UserRepository;
 import org.springframework.ai.chat.client.ChatClient;
@@ -27,6 +31,7 @@ public class ConversationMemoryService {
     private final ObjectMapper objectMapper;
     private final UserRepository userRepository;
     private final ConversationMessageRepository conversationMessageRepository;
+    private final ConversationSessionRepository conversationSessionRepository;
     private final ConversationMemoryRepository conversationMemoryRepository;
     private final UserProfileRepository userProfileRepository;
     private final UserProfileService userProfileService;
@@ -35,6 +40,7 @@ public class ConversationMemoryService {
                                      ObjectMapper objectMapper,
                                      UserRepository userRepository,
                                      ConversationMessageRepository conversationMessageRepository,
+                                     ConversationSessionRepository conversationSessionRepository,
                                      ConversationMemoryRepository conversationMemoryRepository,
                                      UserProfileRepository userProfileRepository,
                                      UserProfileService userProfileService) {
@@ -42,16 +48,23 @@ public class ConversationMemoryService {
         this.objectMapper = objectMapper;
         this.userRepository = userRepository;
         this.conversationMessageRepository = conversationMessageRepository;
+        this.conversationSessionRepository = conversationSessionRepository;
         this.conversationMemoryRepository = conversationMemoryRepository;
         this.userProfileRepository = userProfileRepository;
         this.userProfileService = userProfileService;
     }
 
-    public String buildMemoryContext(String username) {
+    public Long resolveSessionId(String username, Long sessionId, String firstMessage) {
         User user = findUser(username);
+        return getOrCreateSession(user, sessionId, firstMessage).getId();
+    }
+
+    public String buildMemoryContext(String username, Long sessionId) {
+        User user = findUser(username);
+        ConversationSession session = findSession(user, sessionId);
         ConversationMemory memory = getOrCreateMemory(user);
         UserProfile profile = userProfileService.getOrCreateProfile(user);
-        List<ConversationMessage> recentMessages = conversationMessageRepository.findTop12ByUserOrderByCreatedAtDesc(user);
+        List<ConversationMessage> recentMessages = conversationMessageRepository.findTop12ByUserAndSessionOrderByCreatedAtDesc(user, session);
         Collections.reverse(recentMessages);
 
         String recentContext = recentMessages.isEmpty()
@@ -62,6 +75,9 @@ public class ConversationMemoryService {
 
         return """
                 【短期记忆：最近对话】
+                %s
+
+                【当前会话摘要】
                 %s
 
                 【中期记忆：对话摘要】
@@ -79,6 +95,7 @@ public class ConversationMemoryService {
                 支持目标：%s
                 """.formatted(
                 recentContext,
+                valueOrDefault(session.getSummary(), "暂无会话摘要"),
                 valueOrDefault(memory.getSummary(), "暂无摘要"),
                 valueOrDefault(memory.getLongTermMemory(), "暂无长期记忆"),
                 valueOrDefault(profile.getProfileSummary(), "暂无稳定画像"),
@@ -91,19 +108,32 @@ public class ConversationMemoryService {
     }
 
     @Transactional
-    public void rememberTurn(String username, String userMessage, String assistantReply) {
+    public void rememberTurn(String username, Long sessionId, String userMessage, String assistantReply) {
         User user = findUser(username);
-        saveMessage(user, "user", userMessage);
-        saveMessage(user, "assistant", assistantReply);
-        updateMemoryAndProfile(user, userMessage, assistantReply);
+        ConversationSession session = findSession(user, sessionId);
+        saveMessage(user, session, "user", userMessage);
+        saveMessage(user, session, "assistant", assistantReply);
+        updateMemoryAndProfile(user, session, userMessage, assistantReply);
     }
 
-    public UserProfileResponse getProfile(String username) {
+    public List<ConversationSessionResponse> listSessions(String username) {
         User user = findUser(username);
-        return userProfileService.toResponse(userProfileService.getOrCreateProfile(user));
+        return conversationSessionRepository.findByUserOrderByUpdatedAtDesc(user)
+                .stream()
+                .map(this::toSessionResponse)
+                .toList();
     }
 
-    private void updateMemoryAndProfile(User user, String userMessage, String assistantReply) {
+    public List<ConversationMessageResponse> listMessages(String username, Long sessionId) {
+        User user = findUser(username);
+        ConversationSession session = findSession(user, sessionId);
+        return conversationMessageRepository.findByUserAndSessionOrderByCreatedAtAsc(user, session)
+                .stream()
+                .map(this::toMessageResponse)
+                .toList();
+    }
+
+    private void updateMemoryAndProfile(User user, ConversationSession session, String userMessage, String assistantReply) {
         ConversationMemory memory = getOrCreateMemory(user);
         UserProfile profile = userProfileService.getOrCreateProfile(user);
 
@@ -121,6 +151,7 @@ public class ConversationMemoryService {
 
                         返回格式：
                         {
+                          "sessionSummary": "当前会话摘要",
                           "summary": "中期对话摘要",
                           "longTermMemory": "长期稳定信息",
                           "profileSummary": "用户画像概览",
@@ -132,6 +163,8 @@ public class ConversationMemoryService {
                         }
                         """)
                 .user("""
+                        当前会话标题：%s
+                        旧当前会话摘要：%s
                         旧中期摘要：%s
                         旧长期记忆：%s
                         旧画像概览：%s
@@ -144,6 +177,8 @@ public class ConversationMemoryService {
                         最新用户消息：%s
                         最新助手回复：%s
                         """.formatted(
+                        session.getTitle(),
+                        valueOrDefault(session.getSummary(), "暂无"),
                         valueOrDefault(memory.getSummary(), "暂无"),
                         valueOrDefault(memory.getLongTermMemory(), "暂无"),
                         valueOrDefault(profile.getProfileSummary(), "暂无"),
@@ -160,26 +195,36 @@ public class ConversationMemoryService {
 
         try {
             Map<String, String> updates = objectMapper.readValue(extractJson(json), new TypeReference<>() {});
-            applyMemoryUpdates(memory, profile, updates);
+            applyMemoryUpdates(session, memory, profile, updates);
+            conversationSessionRepository.save(session);
             conversationMemoryRepository.save(memory);
             userProfileRepository.save(profile);
         } catch (Exception e) {
+            session.setSummary(limit(valueOrDefault(session.getSummary(), "") + "\n用户：" + userMessage, 1000));
+            session.setUpdatedAt(LocalDateTime.now());
             memory.setSummary(limit(valueOrDefault(memory.getSummary(), "") + "\n用户：" + userMessage, 1000));
             memory.setUpdatedAt(LocalDateTime.now());
+            conversationSessionRepository.save(session);
             conversationMemoryRepository.save(memory);
         }
     }
 
-    private void saveMessage(User user, String role, String content) {
+    private void saveMessage(User user, ConversationSession session, String role, String content) {
         ConversationMessage message = new ConversationMessage();
         message.setUser(user);
+        message.setSession(session);
         message.setRole(role);
         message.setContent(limit(content, 4000));
         message.setCreatedAt(LocalDateTime.now());
         conversationMessageRepository.save(message);
+        session.setUpdatedAt(message.getCreatedAt());
+        conversationSessionRepository.save(session);
     }
 
-    private void applyMemoryUpdates(ConversationMemory memory, UserProfile profile, Map<String, String> updates) {
+    private void applyMemoryUpdates(ConversationSession session, ConversationMemory memory, UserProfile profile, Map<String, String> updates) {
+        session.setSummary(limit(updates.get("sessionSummary"), 1000));
+        session.setUpdatedAt(LocalDateTime.now());
+
         memory.setSummary(limit(updates.get("summary"), 1000));
         memory.setLongTermMemory(limit(updates.get("longTermMemory"), 1000));
         memory.setUpdatedAt(LocalDateTime.now());
@@ -202,6 +247,56 @@ public class ConversationMemoryService {
             memory.setUpdatedAt(LocalDateTime.now());
             return conversationMemoryRepository.save(memory);
         });
+    }
+
+    private ConversationSession getOrCreateSession(User user, Long sessionId, String firstMessage) {
+        if (sessionId != null) {
+            return findSession(user, sessionId);
+        }
+        ConversationSession session = new ConversationSession();
+        LocalDateTime now = LocalDateTime.now();
+        session.setUser(user);
+        session.setTitle(buildSessionTitle(firstMessage));
+        session.setSummary("暂无会话摘要");
+        session.setCreatedAt(now);
+        session.setUpdatedAt(now);
+        return conversationSessionRepository.save(session);
+    }
+
+    private ConversationSession findSession(User user, Long sessionId) {
+        if (sessionId == null) {
+            throw new RuntimeException("sessionId不能为空");
+        }
+        return conversationSessionRepository.findByIdAndUser(sessionId, user)
+                .orElseThrow(() -> new RuntimeException("会话不存在"));
+    }
+
+    private ConversationSessionResponse toSessionResponse(ConversationSession session) {
+        return new ConversationSessionResponse(
+                session.getId(),
+                session.getTitle(),
+                session.getSummary(),
+                session.getCreatedAt(),
+                session.getUpdatedAt()
+        );
+    }
+
+    private ConversationMessageResponse toMessageResponse(ConversationMessage message) {
+        return new ConversationMessageResponse(
+                message.getId(),
+                message.getSession() == null ? null : message.getSession().getId(),
+                message.getRole(),
+                message.getContent(),
+                message.getCreatedAt()
+        );
+    }
+
+    private String buildSessionTitle(String message) {
+        String title = valueOrDefault(message, "新对话").strip().replaceAll("\\s+", " ");
+        if (title.length() > 24) {
+            return title.substring(0, 24);
+        }
+        return title;
     }
 
     private User findUser(String username) {

@@ -33,7 +33,8 @@ public class AgentService {
         if (message == null || message.isBlank()) {
             throw new RuntimeException("message不能为空");
         }
-        String memoryContext = conversationMemoryService.buildMemoryContext(username);
+        Long sessionId = conversationMemoryService.resolveSessionId(username, request.getSessionId(), message);
+        String memoryContext = conversationMemoryService.buildMemoryContext(username, sessionId);
         ToolDecisionResponse response=decideTool(message);
         if (response != null && !response.isNeedTool()) {
             String reply = response.getReply();
@@ -41,12 +42,13 @@ public class AgentService {
             if (reply == null || reply.isBlank()) {
                 reply = generatePlainReply(message, memoryContext);
             }
-            conversationMemoryService.rememberTurn(username, message, reply);
+            conversationMemoryService.rememberTurn(username, sessionId, message, reply);
 
             return new AgentChatResponse(
                     reply,
                     false,
-                    null
+                    null,
+                    sessionId
             );
         }
         Object toolResult= null;
@@ -69,11 +71,12 @@ public class AgentService {
 
         }
         String reply = generateFinalReply(message,toolResult,memoryContext);
-        conversationMemoryService.rememberTurn(username, message, reply);
+        conversationMemoryService.rememberTurn(username, sessionId, message, reply);
         return new AgentChatResponse(
                 reply,
                 true,
-                response.getTool()
+                response.getTool(),
+                sessionId
         );
     }
     private ToolDecisionResponse decideTool(String message){

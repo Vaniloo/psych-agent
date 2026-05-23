@@ -6,6 +6,8 @@ import com.vanilo.psych.agent.service.UserProfileService;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/profile")
 public class UserProfileController {
@@ -16,19 +18,28 @@ public class UserProfileController {
     }
 
     @GetMapping
-    public UserProfileResponse getProfile(Authentication authentication) {
+    public List<UserProfileResponse> listProfiles(Authentication authentication) {
         if (authentication == null) {
             throw new RuntimeException("未登陆");
         }
-        return userProfileService.getProfile(authentication.getName());
+        return userProfileService.listAllProfiles();
     }
 
-    @PutMapping
+    @GetMapping("/{username}")
+    public UserProfileResponse getProfile(@PathVariable String username, Authentication authentication) {
+        if (authentication == null) {
+            throw new RuntimeException("未登陆");
+        }
+        return userProfileService.getProfile(username);
+    }
+
+    @PutMapping("/{username}")
     public UserProfileResponse updateProfile(@RequestBody UserProfileUpdateRequest request,
+                                             @PathVariable String username,
                                              Authentication authentication) {
         if (authentication == null) {
             throw new RuntimeException("未登陆");
         }
-        return userProfileService.updateProfile(authentication.getName(), request);
+        return userProfileService.updateProfile(username, request);
     }
 }

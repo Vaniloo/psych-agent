@@ -8,11 +8,11 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "conversation_messages")
+@Table(name = "conversation_sessions")
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class ConversationMessage {
+public class ConversationSession {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -21,17 +21,16 @@ public class ConversationMessage {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @ManyToOne
-    @JoinColumn(name = "session_id")
-    private ConversationSession session;
-
-    @Column(nullable = false, length = 32)
-    private String role;
+    @Column(nullable = false)
+    private String title;
 
     @Lob
-    @Column(nullable = false, columnDefinition = "TEXT")
-    private String content;
+    @Column(columnDefinition = "TEXT")
+    private String summary;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
+
+    @Column(nullable = false)
+    private LocalDateTime updatedAt;
 }

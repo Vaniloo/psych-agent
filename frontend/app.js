@@ -4,6 +4,8 @@ const state = {
   token: localStorage.getItem("psychAgentToken") || "",
   user: JSON.parse(localStorage.getItem("psychAgentUser") || "null"),
   chatMode: "agent",
+  currentSessionId: null,
+  profiles: [],
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -22,7 +24,10 @@ function init() {
   hydrateSettings();
   addMessage("assistant", "你好，我是 Psych Agent。登录后可以开始对话、查看画像和报告。");
   if (state.token) {
-    refreshProfile();
+    loadConversations();
+    if (isAdmin()) {
+      refreshProfile();
+    }
   }
 }
 
@@ -118,7 +123,10 @@ function bindAuth() {
       syncConnectionLabel();
       applyRoleVisibility();
       toast("登录成功");
-      await refreshProfile();
+      await loadConversations();
+      if (isAdmin()) {
+        await refreshProfile();
+      }
     } catch (error) {
       toast(error.message);
     }
@@ -151,6 +159,7 @@ function readCredentials() {
 }
 
 function bindChat() {
+  $("#newChatBtn").addEventListener("click", startNewConversation);
   $("#chatForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const input = $("#messageInput");
@@ -163,13 +172,24 @@ function bindChat() {
       const path = state.chatMode === "agent" ? "/agent/chat" : "/message";
       const data = await api(path, {
         method: "POST",
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, sessionId: state.chatMode === "agent" ? state.currentSessionId : null }),
       });
+      if (data.sessionId) {
+        state.currentSessionId = data.sessionId;
+      }
       addMessage("assistant", data.reply || data);
+      await loadConversations();
     } catch (error) {
       addMessage("meta", error.message);
     }
   });
+}
+
+function startNewConversation() {
+  state.currentSessionId = null;
+  $("#chatLog").innerHTML = "";
+  addMessage("assistant", "新的对话已开始。");
+  renderConversationList();
 }
 
 function addMessage(role, content) {
@@ -182,13 +202,25 @@ function addMessage(role, content) {
 
 function bindProfile() {
   $("#refreshProfileBtn").addEventListener("click", refreshProfile);
+  $("#profileUserSelect").addEventListener("change", () => {
+    const profile = state.profiles.find((item) => item.username === $("#profileUserSelect").value);
+    if (profile) {
+      fillProfile(profile);
+    }
+  });
   $("#profileForm").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const username = $("#profileUserSelect").value;
+    if (!username) {
+      toast("请选择用户");
+      return;
+    }
     try {
-      const data = await api("/profile", {
+      const data = await api(`/profile/${encodeURIComponent(username)}`, {
         method: "PUT",
         body: JSON.stringify(readProfileForm()),
       });
+      state.profiles = state.profiles.map((profile) => profile.username === data.username ? data : profile);
       fillProfile(data);
       toast("画像已保存");
     } catch (error) {
@@ -198,9 +230,10 @@ function bindProfile() {
 }
 
 async function refreshProfile() {
+  if (!isAdmin()) return;
   try {
-    const data = await api("/profile");
-    fillProfile(data);
+    state.profiles = await api("/profile");
+    renderProfileUsers();
   } catch (error) {
     toast(error.message);
   }
@@ -218,12 +251,61 @@ function readProfileForm() {
 }
 
 function fillProfile(profile) {
+  if (profile.username) {
+    $("#profileUserSelect").value = profile.username;
+  }
   $("#profileSummary").value = profile.profileSummary || "";
   $("#concerns").value = profile.concerns || "";
   $("#preferences").value = profile.preferences || "";
   $("#copingStrategies").value = profile.copingStrategies || "";
   $("#riskSignals").value = profile.riskSignals || "";
   $("#supportGoals").value = profile.supportGoals || "";
+}
+
+function renderProfileUsers() {
+  $("#profileUserSelect").innerHTML = state.profiles
+    .map((profile) => `<option value="${escapeHtml(profile.username)}">${escapeHtml(profile.username)}</option>`)
+    .join("");
+  if (state.profiles.length > 0) {
+    fillProfile(state.profiles[0]);
+  }
+}
+
+async function loadConversations() {
+  if (!state.token) return;
+  try {
+    state.conversations = await api("/conversations");
+    renderConversationList();
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+function renderConversationList() {
+  const conversations = state.conversations || [];
+  $("#conversationList").innerHTML = conversations.length
+    ? conversations.map((session) => `
+      <button class="conversation-item ${session.id === state.currentSessionId ? "active" : ""}" data-session-id="${session.id}" type="button">
+        ${escapeHtml(session.title || "未命名对话")}
+        <span>${escapeHtml(formatTime(session.updatedAt))}</span>
+      </button>
+    `).join("")
+    : `<div class="list-item"><p>暂无历史</p></div>`;
+  $$(".conversation-item").forEach((button) => {
+    button.addEventListener("click", () => continueConversation(Number(button.dataset.sessionId)));
+  });
+}
+
+async function continueConversation(sessionId) {
+  try {
+    const messages = await api(`/conversations/${sessionId}/messages`);
+    state.currentSessionId = sessionId;
+    $("#chatLog").innerHTML = "";
+    messages.forEach((message) => addMessage(message.role === "assistant" ? "assistant" : "user", message.content));
+    renderConversationList();
+  } catch (error) {
+    toast(error.message);
+  }
 }
 
 function bindReports() {

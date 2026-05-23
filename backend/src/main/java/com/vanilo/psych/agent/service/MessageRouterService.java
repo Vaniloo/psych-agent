@@ -41,12 +41,13 @@ public class MessageRouterService {
         if(!isLocked){
             throw new RuntimeException("请勿频繁输入相同内容");
         }
-        String memoryContext = conversationMemoryService.buildMemoryContext(username);
+        Long sessionId = conversationMemoryService.resolveSessionId(username, null, message);
+        String memoryContext = conversationMemoryService.buildMemoryContext(username, sessionId);
         IntentResult result = intentService.classify(message);
         switch (result.getIntent()){
             case CHAT:{
                 String reply = chatService.plainChat(message, memoryContext);
-                conversationMemoryService.rememberTurn(username, message, reply);
+                conversationMemoryService.rememberTurn(username, sessionId, message, reply);
                 return new MessageResponse(
                         result.getIntent(),
                         reply,
@@ -71,7 +72,7 @@ public class MessageRouterService {
                     }
                 }
                 String reply = chatService.ragChat(message, memoryContext);
-                conversationMemoryService.rememberTurn(username, message, reply);
+                conversationMemoryService.rememberTurn(username, sessionId, message, reply);
                 return  new MessageResponse(
                         result.getIntent(),
                         reply,

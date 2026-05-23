@@ -9,4 +9,5 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class AgentChatRequest {
     private String message;
+    private Long sessionId;
 }

@@ -28,7 +28,8 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth->auth
                         .requestMatchers("/auth/**","/test/**","/chat").permitAll()
-                        .requestMatchers("/reports/my","/reports/dashboard","/chat/analyze","/message","/agent/chat","/profile").authenticated()
+                        .requestMatchers("/reports/my","/reports/dashboard","/chat/analyze","/message","/agent/chat","/conversations/**").authenticated()
+                        .requestMatchers("/profile","/profile/**").hasRole("ADMIN")
                         .requestMatchers("/knowledge/**").hasRole("ADMIN")
                         .requestMatchers("/reports/**").hasRole("ADMIN")
                         .anyRequest().permitAll()
