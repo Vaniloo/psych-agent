@@ -21,11 +21,15 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
 
 @Service
 public class KnowledgeService {
+    private static final int DEFAULT_RECALL_LIMIT = 18;
+    private static final int DEFAULT_RESULT_LIMIT = 6;
+    private static final int MAX_RECALL_LIMIT = 30;
+    private static final int MAX_RESULT_LIMIT = 10;
+
     private final VectorStore vectorStore;
     private final KnowledgeDocumentRepository repository;
     private final StringRedisTemplate stringRedisTemplate;
@@ -80,54 +84,7 @@ public class KnowledgeService {
         }
     }
     public List<KnowledgeSearchResponse> searchKnowledge(String query,String category){
-        if(query==null||query.isBlank()){
-            throw new RuntimeException("query不得为空");
-        }
-        String cacheKey;
-        if (category!=null&&!category.isBlank()){
-            cacheKey="rag:"+category+":"+query;
-        }
-        else{
-            cacheKey="rag:all:"+query;
-        }
-        String cached=stringRedisTemplate.opsForValue().get(cacheKey);
-        if(cached!=null){
-            try {
-                System.out.println("cache hit:"+query);
-                return objectMapper.readValue(cached,new TypeReference<List<KnowledgeSearchResponse>>(){});
-            } catch (JsonProcessingException e) {
-                e.printStackTrace();
-            }
-        }
-        System.out.println("cache miss");
-        SearchRequest.Builder builder=SearchRequest.builder();
-        builder.query(query);
-        builder.topK(10);
-        if (category!=null&&!category.isBlank()){
-            builder.filterExpression("category == '"+category+"'");
-        }
-        List<Document> documentList=vectorStore.similaritySearch(
-                builder.build()
-        );
-        List<KnowledgeSearchResponse> searchResults = documentList.stream().map(
-                doc->new KnowledgeSearchResponse(
-                doc.getText(),
-                doc.getMetadata().get("category")==null?"default":doc.getMetadata().get("category").toString(),
-                doc.getMetadata().get("source")==null?"unknown":doc.getMetadata().get("source").toString(),
-                doc.getId()
-            )
-        ).toList();
-        List<KnowledgeSearchResponse> rerankedResults=rerankService.rerank(query,category,searchResults);
-        try {
-            stringRedisTemplate.opsForValue().set(
-                    cacheKey,
-                    objectMapper.writeValueAsString(rerankedResults),
-                    Duration.ofMinutes(10)
-            );
-        } catch (JsonProcessingException e) {
-            e.printStackTrace();
-        }
-        return rerankedResults;
+        return searchKnowledgeInternal(query, category, DEFAULT_RESULT_LIMIT);
     }
     public void deleteKnowledge(String id){
         if(id==null||id.isBlank()){
@@ -155,6 +112,11 @@ public class KnowledgeService {
     }
     public List<KnowledgeSearchResponse> searchKnowledge(String query){
         return searchKnowledge(query,null);
+    }
+
+    public List<KnowledgeSearchResponse> searchKnowledge(String query, String category, Integer limit) {
+        int safeLimit = normalizeLimit(limit, DEFAULT_RESULT_LIMIT, MAX_RESULT_LIMIT);
+        return searchKnowledgeInternal(query, category, safeLimit);
     }
     public void importDocument(KnowledgeImportRequest knowledgeImportRequest){
         if(knowledgeImportRequest==null||knowledgeImportRequest.getContent()==null||knowledgeImportRequest.getContent().isBlank()){
@@ -193,6 +155,202 @@ public class KnowledgeService {
         if(keys!=null&&!keys.isEmpty()){
             stringRedisTemplate.delete(keys);
         }
+    }
+
+    private List<KnowledgeSearchResponse> searchKnowledgeInternal(String query, String category, int resultLimit) {
+        if(query==null||query.isBlank()){
+            throw new RuntimeException("query不得为空");
+        }
+        String normalizedQuery = normalizeQuery(query);
+        String normalizedCategory = normalizeCategory(category);
+        String cacheKey = "rag:v2:%s:%d:%s".formatted(
+                normalizedCategory == null ? "all" : normalizedCategory,
+                resultLimit,
+                normalizedQuery
+        );
+        String cached=stringRedisTemplate.opsForValue().get(cacheKey);
+        if(cached!=null){
+            try {
+                return objectMapper.readValue(cached,new TypeReference<List<KnowledgeSearchResponse>>(){});
+            } catch (JsonProcessingException ignored) {
+            }
+        }
+
+        List<KnowledgeSearchResponse> candidates = recall(normalizedQuery, normalizedCategory);
+        if (candidates.isEmpty()) {
+            candidates = keywordFallback(normalizedQuery, normalizedCategory);
+        }
+        List<KnowledgeSearchResponse> results = prepareBusinessResults(
+                normalizedQuery,
+                normalizedCategory,
+                candidates,
+                resultLimit
+        );
+        try {
+            stringRedisTemplate.opsForValue().set(
+                    cacheKey,
+                    objectMapper.writeValueAsString(results),
+                    Duration.ofMinutes(10)
+            );
+        } catch (JsonProcessingException ignored) {
+        }
+        return results;
+    }
+
+    private List<KnowledgeSearchResponse> recall(String query, String category) {
+        try {
+            SearchRequest.Builder builder=SearchRequest.builder();
+            builder.query(query);
+            builder.topK(normalizeLimit(DEFAULT_RECALL_LIMIT, DEFAULT_RECALL_LIMIT, MAX_RECALL_LIMIT));
+            if (category!=null&&!category.isBlank()){
+                builder.filterExpression("category == '" + escapeFilterValue(category) + "'");
+            }
+            List<Document> documentList=vectorStore.similaritySearch(builder.build());
+            return toSearchResponses(documentList);
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
+    }
+
+    private List<KnowledgeSearchResponse> toSearchResponses(List<Document> documentList) {
+        if (documentList == null || documentList.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return documentList.stream().map(
+                doc->new KnowledgeSearchResponse(
+                        doc.getText(),
+                        doc.getMetadata().get("category")==null?"default":doc.getMetadata().get("category").toString(),
+                        doc.getMetadata().get("source")==null?"unknown":doc.getMetadata().get("source").toString(),
+                        doc.getId()
+                )
+        ).toList();
+    }
+
+    private List<KnowledgeSearchResponse> keywordFallback(String query, String category) {
+        List<String> terms = buildQueryTerms(query);
+        if (terms.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return repository.findAll()
+                .stream()
+                .filter(doc -> category == null || category.equals(doc.getCategory()))
+                .filter(doc -> containsAnyTerm(doc.getContent(), terms))
+                .map(doc -> {
+                    KnowledgeSearchResponse response = new KnowledgeSearchResponse(
+                            doc.getContent(),
+                            doc.getCategory(),
+                            doc.getSource(),
+                            doc.getId()
+                    );
+                    response.setMatchReason("数据库关键词兜底");
+                    return response;
+                })
+                .limit(DEFAULT_RECALL_LIMIT)
+                .toList();
+    }
+
+    private List<KnowledgeSearchResponse> prepareBusinessResults(String query,
+                                                                 String category,
+                                                                 List<KnowledgeSearchResponse> candidates,
+                                                                 int resultLimit) {
+        if (candidates == null || candidates.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<KnowledgeSearchResponse> deduped = deduplicate(candidates);
+        List<KnowledgeSearchResponse> rerankedResults=rerankService.rerank(query,category,deduped);
+        return rerankedResults.stream()
+                .peek(item -> enrichRelevance(query, category, item))
+                .limit(resultLimit)
+                .toList();
+    }
+
+    private List<KnowledgeSearchResponse> deduplicate(List<KnowledgeSearchResponse> candidates) {
+        Map<String, KnowledgeSearchResponse> result = new LinkedHashMap<>();
+        for (KnowledgeSearchResponse item : candidates) {
+            String key = item.getId() == null || item.getId().isBlank()
+                    ? normalizeQuery(item.getContent())
+                    : item.getId();
+            result.putIfAbsent(key, item);
+        }
+        return new ArrayList<>(result.values());
+    }
+
+    private void enrichRelevance(String query, String category, KnowledgeSearchResponse item) {
+        String content = item.getContent() == null ? "" : item.getContent();
+        String safeQuery = query == null ? "" : query;
+        double score = 0.35;
+        if (!safeQuery.isBlank() && content.contains(safeQuery)) {
+            score += 0.35;
+        }
+        if (category != null && category.equals(item.getCategory())) {
+            score += 0.15;
+        }
+        int phraseHits = 0;
+        for (int i = 0; i < safeQuery.length() - 1; i++) {
+            if (content.contains(safeQuery.substring(i, i + 2))) {
+                phraseHits++;
+            }
+        }
+        score += Math.min(0.15, phraseHits * 0.02);
+        item.setRelevanceScore(Math.min(1.0, score));
+        item.setMatchReason(buildMatchReason(category, item, phraseHits));
+    }
+
+    private String buildMatchReason(String category, KnowledgeSearchResponse item, int phraseHits) {
+        if (category != null && category.equals(item.getCategory())) {
+            return "分类匹配，内容语义相关";
+        }
+        if (phraseHits > 0) {
+            return "关键词片段匹配";
+        }
+        return "向量语义召回";
+    }
+
+    private String normalizeQuery(String query) {
+        return query == null ? "" : query.strip().replaceAll("\\s+", " ");
+    }
+
+    private String normalizeCategory(String category) {
+        if (category == null || category.isBlank()) {
+            return null;
+        }
+        return category.strip();
+    }
+
+    private List<String> buildQueryTerms(String query) {
+        String safeQuery = normalizeQuery(query);
+        if (safeQuery.isBlank()) {
+            return Collections.emptyList();
+        }
+        List<String> terms = new ArrayList<>();
+        terms.add(safeQuery);
+        for (String part : safeQuery.split("[,，。！？\\s]+")) {
+            if (part.length() >= 2) {
+                terms.add(part);
+            }
+        }
+        for (int i = 0; i < safeQuery.length() - 1; i++) {
+            terms.add(safeQuery.substring(i, i + 2));
+        }
+        return terms.stream().distinct().toList();
+    }
+
+    private boolean containsAnyTerm(String content, List<String> terms) {
+        if (content == null || content.isBlank()) {
+            return false;
+        }
+        return terms.stream().anyMatch(content::contains);
+    }
+
+    private int normalizeLimit(Integer limit, int defaultValue, int maxValue) {
+        if (limit == null || limit <= 0) {
+            return defaultValue;
+        }
+        return Math.min(limit, maxValue);
+    }
+
+    private String escapeFilterValue(String value) {
+        return value.replace("'", "\\'");
     }
 
 }

@@ -41,11 +41,12 @@ public class RuleBasedRerankService implements RerankService {
         }
         String content=item.getContent();
         if(content!=null&&!content.isBlank()){
-            if(content.contains(query)){
+            String safeQuery = query == null ? "" : query.strip();
+            if(!safeQuery.isBlank() && content.contains(safeQuery)){
                 score+=50;
             }
-            for(int i=0;i<query.length()-1;i++){
-                if(content.contains(query.substring(i,i+2))){
+            for(int i=0;i<safeQuery.length()-1;i++){
+                if(content.contains(safeQuery.substring(i,i+2))){
                     score+=2;
                 }
             }

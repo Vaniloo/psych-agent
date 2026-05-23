@@ -28,7 +28,8 @@ public class SearchKnowledgeTool implements ToolExecutor{
                 "在心理知识库中搜索相关内容",
                 List.of(
                         new ToolParameterInfo("query","string",true,"用户的问题"),
-                        new ToolParameterInfo("category","string",false,"知识分类，如anxiety")
+                        new ToolParameterInfo("category","string",false,"知识分类，如anxiety"),
+                        new ToolParameterInfo("limit","integer",false,"返回数量，默认6，最大10")
                 )
         );
     }
@@ -39,7 +40,8 @@ public class SearchKnowledgeTool implements ToolExecutor{
             throw new RuntimeException("query不能为空");
         }
         String category = arguments.get("category")==null?null:arguments.get("category").toString();
-        return knowledgeService.searchKnowledge(query,category);
+        Integer limit = arguments.get("limit") instanceof Number number ? number.intValue() : null;
+        return knowledgeService.searchKnowledge(query,category,limit);
     }
 
 }

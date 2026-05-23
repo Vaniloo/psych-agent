@@ -24,8 +24,9 @@ public class KnowledgeController {
     }
     @GetMapping("/search")
     public List<KnowledgeSearchResponse> searchKnowledge(@RequestParam("query") String query,
-                            @RequestParam(value = "category",required=false)String category){
-        return knowledgeService.searchKnowledge(query,category);
+                            @RequestParam(value = "category",required=false)String category,
+                            @RequestParam(value = "limit",required=false)Integer limit){
+        return knowledgeService.searchKnowledge(query,category,limit);
     }
     @DeleteMapping("/{id}")
     public String deleteKnowledge(@PathVariable String id){
