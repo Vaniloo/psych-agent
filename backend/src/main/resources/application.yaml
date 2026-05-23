@@ -9,6 +9,9 @@ server:
 jwt:
   secret: kskblzdjdwqzkblmpwzbyqslnzswpwsbll1234567
   expiration: 86400000
+psych:
+  seed-knowledge:
+    enabled: ${SEED_KNOWLEDGE_ENABLED:true}
 spring:
   application:
     name: psych-agent
