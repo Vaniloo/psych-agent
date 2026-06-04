@@ -33,8 +33,9 @@ public class PsychologicalService {
         this.alertService = alertService;
         this.userRepository = userRepository;
     }
-    public AnalyzeResponse analyze(String message,String username){
-    String response=chatClient
+
+    public AnalysisResult scan(String message) {
+        String response = chatClient
                 .prompt()
                 .system("""
 你是一个心理状态分析助手。
@@ -75,9 +76,18 @@ risk 判定规则（非常重要）：
         else{
             throw new RuntimeException("未返回合法json"+response);
         }
+        try{
+             return objectMapper.readValue(response, AnalysisResult.class);
+        }
+        catch(Exception e){
+            throw new RuntimeException("分析结果解析失败: " + response, e);
+        }
+    }
+
+    public AnalyzeResponse analyze(String message,String username){
         User user = userRepository.findByUsername(username).orElseThrow(()->new RuntimeException("用户不存在！"));
         try{
-             AnalysisResult analysisResult=objectMapper.readValue(response, AnalysisResult.class);
+             AnalysisResult analysisResult = scan(message);
             PsychologicalReport psychologicalReport=new PsychologicalReport();
             psychologicalReport.setUser(user);
             psychologicalReport.setRisk(analysisResult.getRisk());
@@ -98,7 +108,7 @@ risk 判定规则（非常重要）：
             );
         }
         catch(Exception e){
-            throw new RuntimeException("分析结果解析失败: " + response, e);
+            throw new RuntimeException("心理分析失败", e);
         }
     }
     public List<ReportSummaryResponse> getRecentReports(Long userId,int limit) {
