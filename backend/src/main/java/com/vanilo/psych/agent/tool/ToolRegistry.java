@@ -42,6 +42,15 @@ public class ToolRegistry {
                 .map(ToolExecutor::getToolInfo)
                 .toList();
     }
+
+    public ToolInfoResponse getToolInfo(String toolName) {
+        ToolExecutor tool = toolMap.get(toolName);
+        if (tool == null) {
+            throw new IllegalArgumentException("Tool not found: " + toolName);
+        }
+        return tool.getToolInfo();
+    }
+
     public boolean contains(String toolName) {
         return toolMap.containsKey(toolName);
     }
