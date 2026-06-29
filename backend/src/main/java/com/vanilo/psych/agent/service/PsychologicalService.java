@@ -3,146 +3,147 @@ package com.vanilo.psych.agent.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vanilo.psych.agent.dto.AnalysisResult;
 import com.vanilo.psych.agent.dto.AnalyzeResponse;
+import com.vanilo.psych.agent.dto.EmotionTrendResponse;
 import com.vanilo.psych.agent.dto.ReportSummaryResponse;
+import com.vanilo.psych.agent.dto.RiskCountResponse;
 import com.vanilo.psych.agent.dto.TopRiskUserResponse;
 import com.vanilo.psych.agent.entity.PsychologicalReport;
 import com.vanilo.psych.agent.entity.User;
 import com.vanilo.psych.agent.enums.RiskLevel;
 import com.vanilo.psych.agent.repository.PsychologicalReportRepository;
 import com.vanilo.psych.agent.repository.UserRepository;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 public class PsychologicalService {
-    private final ChatClient chatClient;
-    private final ObjectMapper objectMapper ;
-    private final PsychologicalReportRepository psychologicalReportRepository;
+    private static final String ANALYSIS_PROMPT = """
+            你是一个心理状态分析助手。请根据用户输入分析其心理风险等级和主要情绪。
+
+            要求：
+            1. 只返回 JSON，不要返回解释、前后缀、Markdown 或代码块
+            2. risk 只能是 high、medium、low
+            3. emotion 使用简洁中文词语
+            4. confidence 是 0 到 1 之间的小数
+            5. 只有明确自杀、自伤、轻生意图或极端绝望才能判定 high
+            6. 焦虑、压力、失眠、低落但无自伤倾向判定 medium
+            7. 普通聊天、轻度波动和日常抱怨判定 low
+
+            返回格式：
+            {"risk":"high|medium|low","emotion":"...","confidence":0.xx}
+            """;
+
+    private final LlmService llmService;
+    private final ObjectMapper objectMapper;
+    private final PsychologicalReportRepository reportRepository;
     private final AlertService alertService;
     private final UserRepository userRepository;
 
-    public PsychologicalService(ChatClient.Builder chatClientBuilder, ObjectMapper objectMapper, PsychologicalReportRepository psychologicalReportRepository, AlertService alertService, UserRepository userRepository) {
-        this.chatClient = chatClientBuilder.build();
+    public PsychologicalService(LlmService llmService,
+                                ObjectMapper objectMapper,
+                                PsychologicalReportRepository reportRepository,
+                                AlertService alertService,
+                                UserRepository userRepository) {
+        this.llmService = llmService;
         this.objectMapper = objectMapper;
-        this.psychologicalReportRepository = psychologicalReportRepository;
+        this.reportRepository = reportRepository;
         this.alertService = alertService;
         this.userRepository = userRepository;
     }
 
     public AnalysisResult scan(String message) {
-        String response = chatClient
-                .prompt()
-                .system("""
-你是一个心理状态分析助手。
-请根据用户输入分析其心理风险等级和主要情绪。
-
-要求：
-1. 只返回 JSON
-2. 不要返回任何解释、说明、前后缀、Markdown 标记或代码块
-3. risk 只能是 high、medium、low 三者之一
-4. emotion 使用简洁中文词语，如 焦虑、低落、抑郁、平静 等
-5. confidence 是 0 到 1 之间的小数
-risk 判定规则（非常重要）：
-- high：只有在用户明确表达自杀、自伤、轻生意图、极端绝望（如“活着没有意义”、“我想结束生命”）时，才能判定为 high
-- medium：用户存在明显焦虑、低落、压力大、失眠、情绪困扰，但未表达自伤或轻生倾向
-- low：普通聊天、轻度情绪波动、日常抱怨、兴趣表达等
-
-严格限制：
-- 仅表达“焦虑、压力大、失眠、难过”等，必须判定为 medium，而不是 high
-- 普通聊天内容（如兴趣、娱乐、日常交流）必须判定为 low
-- 不要因为语气消极就提高 risk 等级
-返回格式：
-{
-  "risk": "high|medium|low",
-  "emotion": "...",
-  "confidence": 0.xx
-}
-""")
-                .user(message)
-                .call()
-                .content();
-        System.out.println("原始返回："+response);
-        int start = response.indexOf("{");
-        int end = response.lastIndexOf("}");
-
-        if (start != -1 && end != -1) {
-            response = response.substring(start, end + 1);
+        String response = llmService.complete(ANALYSIS_PROMPT, message);
+        int start = response == null ? -1 : response.indexOf('{');
+        int end = response == null ? -1 : response.lastIndexOf('}');
+        if (start < 0 || end < start) {
+            throw new RuntimeException("未返回合法JSON");
         }
-        else{
-            throw new RuntimeException("未返回合法json"+response);
-        }
-        try{
-             return objectMapper.readValue(response, AnalysisResult.class);
-        }
-        catch(Exception e){
-            throw new RuntimeException("分析结果解析失败: " + response, e);
+        String json = response.substring(start, end + 1);
+        try {
+            return objectMapper.readValue(json, AnalysisResult.class);
+        } catch (Exception exception) {
+            throw new RuntimeException("分析结果解析失败", exception);
         }
     }
 
-    public AnalyzeResponse analyze(String message,String username){
-        User user = userRepository.findByUsername(username).orElseThrow(()->new RuntimeException("用户不存在！"));
-        try{
-             AnalysisResult analysisResult = scan(message);
-            PsychologicalReport psychologicalReport=new PsychologicalReport();
-            psychologicalReport.setUser(user);
-            psychologicalReport.setRisk(analysisResult.getRisk());
-            psychologicalReport.setEmotion(analysisResult.getEmotion());
-            psychologicalReport.setConfidence(analysisResult.getConfidence());
-            psychologicalReport.setMessage(message);
-            psychologicalReport.setCreatedAt(LocalDateTime.now());
-            psychologicalReportRepository.save(psychologicalReport);
-            RiskLevel level=RiskLevel.fromString(analysisResult.getRisk());
-            if(level==RiskLevel.HIGH){
-                alertService.sendHighRiskAlert(psychologicalReport);
-            }
-            return new AnalyzeResponse(
-                    psychologicalReport.getId(),
-                    analysisResult.getRisk(),
-                    analysisResult.getEmotion(),
-                    analysisResult.getConfidence()
-            );
-        }
-        catch(Exception e){
-            throw new RuntimeException("心理分析失败", e);
-        }
+    public AnalyzeResponse analyze(String message, String username) {
+        return saveAnalysis(message, username, scan(message), true);
     }
-    public List<ReportSummaryResponse> getRecentReports(Long userId,int limit) {
-        if(limit <= 0||limit>50){
-            limit=20;
-        }
-        List<Object[]> rows=psychologicalReportRepository.findRecentReportsByUserId(userId,limit);
-        if(rows==null || rows.isEmpty()){
-            throw new RuntimeException("rows are empty");
-        }
-        return rows.stream().map(
-                row->new ReportSummaryResponse(
-                        ((Number)row[0]).longValue(),
-                        (String)row[1],
-                        (String)row[2],
-                        (String) row[3],
-                        ((Number)row[4]).doubleValue(),
-                        ((java.sql.Timestamp)row[5]).toLocalDateTime()
-                )
-        ).collect(Collectors.toList());
+
+    public AnalyzeResponse analyzeHighRisk(String message, String username) {
+        return saveAnalysis(message, username, new AnalysisResult("high", "危机", 1.0), false);
     }
-    public List<TopRiskUserResponse> getTopRiskUsers(int limit) {
-        if(limit <= 0||limit>50){
-            limit=20;
+
+    private AnalyzeResponse saveAnalysis(String message,
+                                         String username,
+                                         AnalysisResult analysis,
+                                         boolean sendLegacyAlert) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+        PsychologicalReport report = new PsychologicalReport();
+        report.setUser(user);
+        report.setRisk(analysis.getRisk());
+        report.setEmotion(analysis.getEmotion());
+        report.setConfidence(analysis.getConfidence());
+        report.setMessage(message);
+        report.setCreatedAt(LocalDateTime.now());
+        reportRepository.save(report);
+
+        if (sendLegacyAlert && RiskLevel.fromString(analysis.getRisk()) == RiskLevel.HIGH) {
+            alertService.sendHighRiskAlert(report);
         }
-        List<Object[]> rows=psychologicalReportRepository.findTopRiskUsers(limit);
-        if(rows==null || rows.isEmpty()){
+        return new AnalyzeResponse(
+                report.getId(), analysis.getRisk(), analysis.getEmotion(), analysis.getConfidence()
+        );
+    }
+
+    public List<ReportSummaryResponse> getRecentReports(Long userId, int limit) {
+        int safeLimit = limit <= 0 || limit > 50 ? 20 : limit;
+        List<Object[]> rows = reportRepository.findRecentReportsByUserId(userId, safeLimit);
+        if (rows == null || rows.isEmpty()) {
             return Collections.emptyList();
         }
-        return rows.stream().map(
-                row->new TopRiskUserResponse(
-                        row[0]==null?null:((Number)row[0]).longValue(),
-                        ((Number)row[1]).longValue()
-                )
-        ).toList();
+        return rows.stream().map(row -> new ReportSummaryResponse(
+                ((Number) row[0]).longValue(),
+                (String) row[1],
+                (String) row[2],
+                (String) row[3],
+                ((Number) row[4]).doubleValue(),
+                ((java.sql.Timestamp) row[5]).toLocalDateTime()
+        )).toList();
+    }
+
+    public List<TopRiskUserResponse> getTopRiskUsers(int limit) {
+        int safeLimit = limit <= 0 || limit > 50 ? 20 : limit;
+        List<Object[]> rows = reportRepository.findTopRiskUsers(safeLimit);
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return rows.stream().map(row -> new TopRiskUserResponse(
+                row[0] == null ? null : ((Number) row[0]).longValue(),
+                ((Number) row[1]).longValue()
+        )).toList();
+    }
+
+    public List<RiskCountResponse> getRiskDistribution(Long userId) {
+        return reportRepository.findRiskDistributionByUserId(userId)
+                .stream()
+                .map(row -> new RiskCountResponse((String) row[0], ((Number) row[1]).longValue()))
+                .toList();
+    }
+
+    public List<EmotionTrendResponse> getEmotionTrend(Long userId) {
+        return reportRepository.findEmotionTrendByUserId(userId)
+                .stream()
+                .map(row -> new EmotionTrendResponse(
+                        ((java.sql.Date) row[0]).toLocalDate(),
+                        (String) row[1],
+                        ((Number) row[2]).longValue(),
+                        ((Number) row[3]).doubleValue()
+                ))
+                .toList();
     }
 }

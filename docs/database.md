@@ -1,73 +1,23 @@
-# 数据库说明
+# 数据库设计
 
-当前代码中的持久化主要由 MySQL 承担，Redis 用于缓存和锁相关逻辑。
+核心表：
 
-## MySQL 中的主要实体
+- `users`：账号、角色、当前角色卡。
+- `psychological_reports`：消息风险、情绪、置信度；含用户时间与风险时间复合索引。
+- `knowledge_document`：知识原文、分类和来源。
+- `conversation_sessions`：会话标题、摘要和更新时间。
+- `conversation_messages`：用户/助手原始消息。
+- `conversation_memories`：用户级中期摘要和长期稳定信息。
+- `user_profiles`：困扰、偏好、应对方式、风险信号和支持目标。
+- `role_cards`：预设和自定义陪伴风格。
+- `risk_alert_events`：PENDING / PROCESSING / SENT / FAILED 告警状态与重试次数。
 
-从 `entity/` 目录可以看到当前核心实体包括：
+Hibernate 默认使用 `ddl-auto=update`。正式生产建议改用 Flyway 管理迁移。
 
-- `User`
-- `UserProfile`
-- `PsychologicalReport`
-- `KnowledgeDocument`
-- `ConversationSession`
-- `ConversationMessage`
-- `ConversationMemory`
+索引验证：
 
-## 主要用途
+```bash
+mysql -uroot -p psych_agent < scripts/explain-report-indexes.sql
+```
 
-### `User`
-
-- 用户注册与登录
-- 角色区分
-
-### `UserProfile`
-
-- 用户画像摘要
-- 困扰、偏好、支持目标等长期信息
-
-### `PsychologicalReport`
-
-- 心理分析结果
-- 风险等级
-- 情绪标签
-- 置信度
-- 原始消息
-
-### `KnowledgeDocument`
-
-- 知识库文档元信息
-
-### `ConversationSession`
-
-- 会话标题
-- 会话摘要
-- 会话创建和更新时间
-
-### `ConversationMessage`
-
-- 某会话中的逐条消息
-
-### `ConversationMemory`
-
-- 中长期记忆摘要
-
-## Redis 的当前用途
-
-从服务命名可以看出，Redis 主要服务于：
-
-- `KnowledgeLockService`
-- `RiskAlertLockService`
-- `UserMessageLockService`
-
-当前代码意图上主要用于：
-
-- 防止重复高风险告警
-- 防止重复消息频繁提交
-- 知识导入等场景的并发控制
-
-## 当前说明
-
-- JPA `ddl-auto` 当前配置为 `update`
-- 本地开发时会根据实体自动更新表结构
-- 完整运行需要可用 MySQL
+两条查询应分别优先使用 `idx_reports_user_created_at` 和 `idx_reports_risk_created_at`。

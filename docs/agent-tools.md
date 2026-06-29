@@ -4,12 +4,16 @@
 
 ## 工具暴露方式
 
-当前 HTTP 层提供两个工具相关接口：
+工具接口需要登录。当前 HTTP 层提供三种调用方式：
 
 - `GET /tools`
   返回所有已注册工具的元信息
 - `POST /tools/call`
   统一执行工具调用
+- `GET /tools/{toolName}`
+  获取单个工具元信息
+- `POST /tools/{toolName}`
+  按名称执行工具
 
 请求格式：
 
@@ -71,11 +75,11 @@
 
 参数：
 
-- `message: string` 必填
+- `text: string` 必填
 
 说明：
 
-- 该工具调用 `PsychologicalService.scan`
+- 该工具使用不可绕过的确定性高风险规则
 - 不写入正式心理报告
 - 不触发邮件告警
 
@@ -108,11 +112,6 @@
 
 - `ToolCallService` 已经实现了基础参数校验
 - `ToolRegistry` 会统一收集所有 `ToolExecutor` 实现
-- 当前 `AgentService` 的提示词中明确列出的工具仍主要是：
-  - `search_knowledge`
-  - `get_dashboard`
-
-这意味着：
-
-- 工具 HTTP 接口已经可以直接调用更多工具
-- 但 Agent 自动决策是否会主动使用新工具，还取决于 `AgentService` 的提示词设计
+- `AgentService` 已声明并可自动选择全部五个工具。
+- `get_dashboard`、`get_user_memory`、`recommend_strategy` 的 `username` 由后端登录态覆盖，客户端不能借工具读取其他用户数据。
+- 高风险消息在工具决策前进入确定性危机流程，不依赖模型是否正确选中工具。

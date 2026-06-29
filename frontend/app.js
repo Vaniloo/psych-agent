@@ -16,18 +16,23 @@ function init() {
   bindNavigation();
   bindAuth();
   bindChat();
+  bindRoleCards();
   bindProfile();
   bindReports();
+  bindHelp();
   bindKnowledge();
   bindSettings();
+  bindToolDebug();
   syncConnectionLabel();
   applyRoleVisibility();
   hydrateSettings();
   addMessage("assistant", "你好，我是 Psych Agent。登录后可以开始对话、查看画像和报告。");
   if (state.token) {
     loadConversations();
+    loadRoleCards();
     if (isAdmin()) {
       refreshProfile();
+      loadTools();
     }
   }
 }
@@ -125,8 +130,10 @@ function bindAuth() {
       applyRoleVisibility();
       toast("登录成功");
       await loadConversations();
+      await loadRoleCards();
       if (isAdmin()) {
         await refreshProfile();
+        await loadTools();
       }
     } catch (error) {
       toast(error.message);
@@ -179,11 +186,72 @@ function bindChat() {
         state.currentSessionId = data.sessionId;
       }
       addMessage("assistant", data.reply || data);
+      if (data.usedTool && data.toolName) {
+        addMessage("meta", `已调用工具：${data.toolName}`);
+      }
+      if (data.crisis) {
+        addCrisisCard(data.resources || []);
+      }
       await loadConversations();
     } catch (error) {
       addMessage("meta", error.message);
     }
   });
+}
+
+function bindRoleCards() {
+  $("#refreshRoleCardsBtn").addEventListener("click", loadRoleCards);
+  $("#roleCardForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await api("/role-cards", {
+        method: "POST",
+        body: JSON.stringify({
+          name: $("#roleCardName").value.trim(),
+          description: $("#roleCardDescription").value.trim(),
+          tone: $("#roleCardTone").value,
+          responseStyle: $("#roleCardResponseStyle").value,
+          customInstructions: $("#roleCardInstructions").value.trim(),
+          forbiddenExpressions: $("#roleCardForbidden").value.trim(),
+        }),
+      });
+      event.target.reset();
+      await loadRoleCards();
+      toast("角色卡已创建");
+    } catch (error) {
+      toast(error.message);
+    }
+  });
+}
+
+async function loadRoleCards() {
+  if (!state.token) return;
+  try {
+    const cards = await api("/role-cards");
+    $("#roleCardList").innerHTML = cards.map((card) => `
+      <article class="role-card-item ${card.active ? "active" : ""}">
+        <h3>${escapeHtml(card.name)}</h3>
+        <p>${escapeHtml(card.description)}</p>
+        <p><span class="tag">${escapeHtml(card.tone)}</span><span class="tag">${escapeHtml(card.responseStyle)}</span></p>
+        <button data-role-card-id="${card.id}" type="button" ${card.active ? "disabled" : ""}>${card.active ? "当前使用" : "启用"}</button>
+      </article>
+    `).join("");
+    $$('[data-role-card-id]').forEach((button) => {
+      button.addEventListener("click", () => activateRoleCard(Number(button.dataset.roleCardId)));
+    });
+  } catch (error) {
+    $("#roleCardList").innerHTML = empty(error.message);
+  }
+}
+
+async function activateRoleCard(roleCardId) {
+  try {
+    await api(`/role-cards/${roleCardId}/activate`, { method: "POST" });
+    await loadRoleCards();
+    toast("角色卡已启用");
+  } catch (error) {
+    toast(error.message);
+  }
 }
 
 function startNewConversation() {
@@ -199,6 +267,18 @@ function addMessage(role, content) {
   item.textContent = content;
   $("#chatLog").appendChild(item);
   $("#chatLog").scrollTop = $("#chatLog").scrollHeight;
+}
+
+function addCrisisCard(resources) {
+  const card = document.createElement("div");
+  card.className = "message crisis-card";
+  card.innerHTML = `
+    <strong>请优先确保当前安全</strong>
+    <div class="crisis-actions">
+      ${resources.map((resource) => `<a class="tag ${resource.urgent ? "high" : ""}" href="tel:${escapeHtml(resource.contact)}">${escapeHtml(resource.name)} ${escapeHtml(resource.contact)}</a>`).join("")}
+    </div>
+  `;
+  $("#chatLog").appendChild(card);
 }
 
 function bindProfile() {
@@ -358,6 +438,26 @@ function bindReports() {
   $("#refreshReportsBtn").addEventListener("click", refreshReports);
 }
 
+function bindHelp() {
+  $("#refreshHelpBtn").addEventListener("click", loadHelpResources);
+  loadHelpResources();
+}
+
+async function loadHelpResources() {
+  try {
+    const resources = await api("/help/resources", { auth: false });
+    $("#helpResources").innerHTML = resources.map((resource) => `
+      <article class="help-resource ${resource.urgent ? "urgent" : ""}">
+        <h3>${escapeHtml(resource.name)}</h3>
+        <span class="help-contact">${escapeHtml(resource.contact)}</span>
+        <p>${escapeHtml(resource.description)}</p>
+      </article>
+    `).join("");
+  } catch (error) {
+    $("#helpResources").innerHTML = empty(error.message);
+  }
+}
+
 async function refreshReports() {
   try {
     const dashboard = await api("/reports/dashboard?recentLimit=10&topRiskLimit=5");
@@ -368,12 +468,39 @@ async function refreshReports() {
       metric("高风险", highCount),
       metric("风险用户", dashboard.topRiskUserResponse?.length || 0),
     ].join("");
+    renderRiskDistribution(dashboard.riskDistribution || []);
+    renderEmotionTrend(dashboard.emotionTrend || []);
     $("#reportsList").innerHTML = reports.length
       ? reports.map(reportItem).join("")
       : empty("暂无报告");
   } catch (error) {
     toast(error.message);
   }
+}
+
+function renderRiskDistribution(items) {
+  const max = Math.max(1, ...items.map((item) => item.count));
+  $("#riskDistribution").innerHTML = items.length
+    ? items.map((item) => `
+      <div class="bar-row">
+        <span class="tag ${escapeHtml(item.risk)}">${escapeHtml(item.risk)}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.round(item.count / max * 100)}%"></div></div>
+        <strong>${item.count}</strong>
+      </div>
+    `).join("")
+    : empty("暂无风险数据");
+}
+
+function renderEmotionTrend(items) {
+  $("#emotionTrend").innerHTML = items.length
+    ? items.map((item) => `
+      <div class="trend-point">
+        <span>${escapeHtml(item.date)}</span>
+        <span>${escapeHtml(item.emotion)}</span>
+        <span class="tag">${item.count} 次</span>
+      </div>
+    `).join("")
+    : empty("暂无趋势数据");
 }
 
 function metric(label, value) {
@@ -458,7 +585,8 @@ function knowledgeItem(item) {
       <h3>${escapeHtml(item.category || "未分类")}</h3>
       <p>
         <span class="tag">${escapeHtml(item.source || "unknown")}</span>
-        ${item.score !== undefined ? `<span class="tag">${escapeHtml(Number(item.score).toFixed(2))}</span>` : ""}
+        ${item.relevanceScore !== undefined && item.relevanceScore !== null ? `<span class="tag">相关度 ${escapeHtml(Number(item.relevanceScore).toFixed(2))}</span>` : ""}
+        ${item.matchReason ? `<span class="tag">${escapeHtml(item.matchReason)}</span>` : ""}
       </p>
       <p>${escapeHtml(item.content || "")}</p>
     </article>
@@ -472,6 +600,40 @@ function bindSettings() {
     syncConnectionLabel();
     toast("API 地址已保存");
   });
+}
+
+function bindToolDebug() {
+  $("#refreshToolsBtn").addEventListener("click", loadTools);
+  $("#toolSelect").addEventListener("change", renderSelectedToolSchema);
+  $("#toolDebugForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const args = JSON.parse($("#toolArguments").value || "{}");
+      const result = await api("/tools/call", {
+        method: "POST",
+        body: JSON.stringify({ tool: $("#toolSelect").value, arguments: args }),
+      });
+      $("#toolDebugOutput").textContent = JSON.stringify(result, null, 2);
+    } catch (error) {
+      $("#toolDebugOutput").textContent = error.message;
+    }
+  });
+}
+
+async function loadTools() {
+  if (!isAdmin()) return;
+  try {
+    state.tools = await api("/tools");
+    $("#toolSelect").innerHTML = state.tools.map((tool) => `<option value="${escapeHtml(tool.name)}">${escapeHtml(tool.name)}</option>`).join("");
+    renderSelectedToolSchema();
+  } catch (error) {
+    $("#toolDebugOutput").textContent = error.message;
+  }
+}
+
+function renderSelectedToolSchema() {
+  const tool = (state.tools || []).find((item) => item.name === $("#toolSelect").value);
+  $("#toolDebugOutput").textContent = tool ? JSON.stringify(tool, null, 2) : "暂无工具";
 }
 
 function applyRoleVisibility() {

@@ -29,4 +29,22 @@ public interface PsychologicalReportRepository extends JpaRepository<Psychologic
     LIMIT :limit
     """, nativeQuery = true)
     List<Object[]>findTopRiskUsers(@Param("limit") int limit);
+
+    @Query(value = """
+    SELECT risk, COUNT(*)
+    FROM psychological_reports
+    WHERE user_id = :userId
+    GROUP BY risk
+    """, nativeQuery = true)
+    List<Object[]> findRiskDistributionByUserId(@Param("userId") Long userId);
+
+    @Query(value = """
+    SELECT DATE(created_at), emotion, COUNT(*), AVG(confidence)
+    FROM psychological_reports
+    WHERE user_id = :userId
+      AND created_at >= DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 30 DAY)
+    GROUP BY DATE(created_at), emotion
+    ORDER BY DATE(created_at) ASC
+    """, nativeQuery = true)
+    List<Object[]> findEmotionTrendByUserId(@Param("userId") Long userId);
 }

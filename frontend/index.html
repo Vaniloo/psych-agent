@@ -19,9 +19,12 @@
 
         <nav class="nav-tabs" aria-label="主导航">
           <button class="nav-tab active" data-view="chatView" type="button">对话</button>
+          <button class="nav-tab" data-view="roleCardView" type="button">角色卡</button>
           <button class="nav-tab admin-only" data-view="profileView" type="button">画像</button>
           <button class="nav-tab" data-view="reportsView" type="button">报告</button>
+          <button class="nav-tab" data-view="helpView" type="button">帮助中心</button>
           <button class="nav-tab admin-only" data-view="knowledgeView" type="button">知识库</button>
+          <button class="nav-tab admin-only" data-view="debugView" type="button">工具调试</button>
           <button class="nav-tab admin-only" data-view="settingsView" type="button">配置</button>
         </nav>
 
@@ -69,6 +72,43 @@
           </form>
         </section>
 
+        <section id="roleCardView" class="view">
+          <header class="view-header">
+            <div>
+              <h2>角色卡</h2>
+              <p>选择陪伴风格，或创建自己的表达偏好。</p>
+            </div>
+            <button id="refreshRoleCardsBtn" type="button">刷新</button>
+          </header>
+          <div class="role-card-layout">
+            <section class="stack-panel">
+              <div class="panel-title">可用角色</div>
+              <div id="roleCardList" class="role-card-list"></div>
+            </section>
+            <form id="roleCardForm" class="stack-panel">
+              <div class="panel-title">自定义角色</div>
+              <input id="roleCardName" placeholder="角色名称" />
+              <input id="roleCardDescription" placeholder="角色说明" />
+              <select id="roleCardTone">
+                <option>温柔</option>
+                <option>沉稳</option>
+                <option>活泼</option>
+                <option>幽默</option>
+                <option>严谨</option>
+              </select>
+              <select id="roleCardResponseStyle">
+                <option>简短直接</option>
+                <option>步骤化详细说明</option>
+                <option>先共情再建议</option>
+                <option>以提问引导思考</option>
+              </select>
+              <textarea id="roleCardInstructions" rows="4" placeholder="额外设定"></textarea>
+              <textarea id="roleCardForbidden" rows="3" placeholder="禁忌表达，用逗号分隔"></textarea>
+              <button class="primary-action" type="submit">创建角色卡</button>
+            </form>
+          </div>
+        </section>
+
         <section id="profileView" class="view admin-only">
           <header class="view-header">
             <div>
@@ -110,7 +150,32 @@
             <button id="refreshReportsBtn" type="button">刷新</button>
           </header>
           <div id="dashboardGrid" class="dashboard-grid"></div>
+          <div class="analytics-grid">
+            <section class="stack-panel">
+              <div class="panel-title">风险等级分布</div>
+              <div id="riskDistribution" class="bar-chart"></div>
+            </section>
+            <section class="stack-panel">
+              <div class="panel-title">近 30 天情绪趋势</div>
+              <div id="emotionTrend" class="trend-chart"></div>
+            </section>
+          </div>
           <div id="reportsList" class="list-panel"></div>
+        </section>
+
+        <section id="helpView" class="view">
+          <header class="view-header">
+            <div>
+              <h2>帮助中心</h2>
+              <p>危机支持、热线资源与即时行动指南。</p>
+            </div>
+            <button id="refreshHelpBtn" type="button">刷新</button>
+          </header>
+          <div class="help-banner">
+            <strong>如果你或他人正处于立即危险中</strong>
+            <p>请不要独处，远离危险物品，并立即联系 120、110 或前往最近的急诊。</p>
+          </div>
+          <div id="helpResources" class="help-grid"></div>
         </section>
 
         <section id="knowledgeView" class="view admin-only">
@@ -152,6 +217,27 @@
             <label>Redis<input id="redisConfig" disabled /></label>
             <label>Ollama<input id="ollamaConfig" disabled /></label>
             <label>Chroma<input id="chromaConfig" disabled /></label>
+          </div>
+        </section>
+
+        <section id="debugView" class="view admin-only">
+          <header class="view-header">
+            <div>
+              <h2>工具调试</h2>
+              <p>查看 ToolRegistry Schema，并执行结构化工具调用。</p>
+            </div>
+            <button id="refreshToolsBtn" type="button">刷新</button>
+          </header>
+          <div class="knowledge-layout">
+            <form id="toolDebugForm" class="stack-panel">
+              <select id="toolSelect"></select>
+              <textarea id="toolArguments" rows="10" placeholder='{"query":"如何缓解焦虑"}'></textarea>
+              <button class="primary-action" type="submit">执行工具</button>
+            </form>
+            <div class="stack-panel">
+              <div class="panel-title">Schema / Result</div>
+              <pre id="toolDebugOutput" class="debug-output">请选择工具</pre>
+            </div>
           </div>
         </section>
       </main>

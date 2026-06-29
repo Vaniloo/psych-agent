@@ -62,9 +62,14 @@ public class ReportController {
         String username =authentication.getName();
         User user = userRepository.findByUsername(username).orElseThrow(()->new RuntimeException("User not found"));
         Long userId = user.getId();
+        List<TopRiskUserResponse> topRiskUsers = "ADMIN".equals(user.getRole())
+                ? psychologicalService.getTopRiskUsers(topRiskLimit==null?10:topRiskLimit)
+                : List.of();
         return new DashboardResponse(
                 psychologicalService.getRecentReports(userId,recentLimit==null?10:recentLimit),
-                psychologicalService.getTopRiskUsers(topRiskLimit==null?10:topRiskLimit)
+                topRiskUsers,
+                psychologicalService.getRiskDistribution(userId),
+                psychologicalService.getEmotionTrend(userId)
         );
     }
 }

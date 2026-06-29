@@ -15,7 +15,10 @@ public class MailAlertService {
         this.mailSender = mailSender;
     }
     public void sendHighRiskEmail(String username, String message, AnalyzeResponse response) {
-        SimpleMailMessage mail=new SimpleMailMessage();
+        if (from == null || from.isBlank()) {
+            return;
+        }
+        SimpleMailMessage mail = new SimpleMailMessage();
         mail.setTo(from);
         mail.setFrom(from);
         mail.setSubject("警告");

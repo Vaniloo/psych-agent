@@ -28,8 +28,13 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
+}
+
+select {
+  min-height: 42px;
 }
 
 button {
@@ -311,6 +316,52 @@ textarea:focus {
   font-size: 13px;
 }
 
+.crisis-card,
+.help-banner {
+  border: 1px solid #fda29b;
+  border-radius: 8px;
+  background: #fff1f0;
+  color: #7a271a;
+  padding: 14px;
+}
+
+.crisis-card {
+  align-self: stretch;
+  max-width: 100%;
+}
+
+.crisis-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.help-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.help-resource {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 16px;
+}
+
+.help-resource.urgent {
+  border-color: #fda29b;
+}
+
+.help-contact {
+  display: block;
+  margin: 8px 0;
+  color: var(--accent-strong);
+  font-size: 24px;
+  font-weight: 800;
+}
+
 .composer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 96px;
@@ -337,6 +388,46 @@ textarea:focus {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.bar-chart,
+.trend-chart {
+  display: grid;
+  gap: 10px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) 44px;
+  gap: 8px;
+  align-items: center;
+}
+
+.bar-track {
+  height: 12px;
+  border-radius: 999px;
+  background: #edf2f0;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+.trend-point {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr) 60px;
+  gap: 8px;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
 }
 
 .metric,
@@ -408,10 +499,52 @@ textarea:focus {
   gap: 14px;
 }
 
+.role-card-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+  gap: 14px;
+}
+
+.role-card-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.role-card-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 14px;
+}
+
+.role-card-item.active {
+  border-color: var(--accent);
+  background: #e6f3ef;
+}
+
+.role-card-item h3,
+.role-card-item p {
+  margin: 0 0 8px;
+}
+
 .stack-panel {
   display: grid;
   gap: 10px;
   align-content: start;
+}
+
+.debug-output {
+  margin: 0;
+  min-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #d8e6e2;
+  background: #17211f;
+  border-radius: 8px;
+  padding: 14px;
+  line-height: 1.5;
 }
 
 .toast {
@@ -447,11 +580,18 @@ textarea:focus {
 
   .nav-tabs,
   .dashboard-grid,
+  .analytics-grid,
+  .help-grid,
   .profile-grid,
   .settings-grid,
   .knowledge-layout,
   .admin-memory-layout,
+  .role-card-layout,
   .composer {
+    grid-template-columns: 1fr;
+  }
+
+  .role-card-list {
     grid-template-columns: 1fr;
   }
 

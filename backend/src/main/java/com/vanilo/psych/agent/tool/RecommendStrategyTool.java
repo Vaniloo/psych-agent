@@ -9,6 +9,7 @@ import com.vanilo.psych.agent.dto.ToolParameterInfo;
 import com.vanilo.psych.agent.service.ConversationMemoryService;
 import com.vanilo.psych.agent.service.KnowledgeService;
 import com.vanilo.psych.agent.service.PsychologicalService;
+import com.vanilo.psych.agent.service.RiskDetectionService;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -19,13 +20,16 @@ public class RecommendStrategyTool implements ToolExecutor {
     private final PsychologicalService psychologicalService;
     private final ConversationMemoryService conversationMemoryService;
     private final KnowledgeService knowledgeService;
+    private final RiskDetectionService riskDetectionService;
 
     public RecommendStrategyTool(PsychologicalService psychologicalService,
                                  ConversationMemoryService conversationMemoryService,
-                                 KnowledgeService knowledgeService) {
+                                 KnowledgeService knowledgeService,
+                                 RiskDetectionService riskDetectionService) {
         this.psychologicalService = psychologicalService;
         this.conversationMemoryService = conversationMemoryService;
         this.knowledgeService = knowledgeService;
+        this.riskDetectionService = riskDetectionService;
     }
 
     @Override
@@ -64,7 +68,9 @@ public class RecommendStrategyTool implements ToolExecutor {
             knowledgeLimit = 3;
         }
 
-        AnalysisResult analysis = psychologicalService.scan(message);
+        AnalysisResult analysis = riskDetectionService.isHighRisk(message)
+                ? new AnalysisResult("high", "危机", 1.0)
+                : psychologicalService.scan(message);
         AdminMemoryResponse memory = conversationMemoryService.getAdminMemory(username);
         List<KnowledgeSearchResponse> references = knowledgeService.searchKnowledge(message, category, knowledgeLimit);
 

@@ -27,13 +27,15 @@ public class SecurityConfig {
                 .userDetailsService(customUserDetailsService)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth->auth
-                        .requestMatchers("/auth/**","/test/**","/chat").permitAll()
-                        .requestMatchers("/reports/my","/reports/dashboard","/chat/analyze","/message","/agent/chat","/conversations/**").authenticated()
+                        .requestMatchers("/auth/**", "/test/ping", "/help/**", "/actuator/health", "/actuator/info").permitAll()
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
+                        .requestMatchers("/reports/my", "/reports/dashboard", "/chat", "/chat/analyze", "/message", "/agent/chat", "/conversations/**", "/role-cards/**", "/tools/**").authenticated()
                         .requestMatchers("/admin/**").hasRole("ADMIN")
                         .requestMatchers("/profile","/profile/**").hasRole("ADMIN")
                         .requestMatchers("/knowledge/**").hasRole("ADMIN")
+                        .requestMatchers("/test/**").hasRole("ADMIN")
                         .requestMatchers("/reports/**").hasRole("ADMIN")
-                        .anyRequest().permitAll()
+                        .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, authException) -> {

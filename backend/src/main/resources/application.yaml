@@ -7,9 +7,15 @@ server:
       force: true
 
 jwt:
-  secret: kskblzdjdwqzkblmpwzbyqslnzswpwsbll1234567
-  expiration: 86400000
+  secret: ${JWT_SECRET:change-me-to-a-long-random-secret-before-production}
+  expiration: ${JWT_EXPIRATION:86400000}
 psych:
+  ai:
+    provider: ${AI_PROVIDER:ollama}
+  alerts:
+    redis-stream-enabled: ${ALERT_REDIS_STREAM_ENABLED:true}
+    poll-delay-ms: ${ALERT_POLL_DELAY_MS:1000}
+    recovery-delay-ms: ${ALERT_RECOVERY_DELAY_MS:60000}
   seed-knowledge:
     enabled: ${SEED_KNOWLEDGE_ENABLED:true}
 spring:
@@ -27,7 +33,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: ${JPA_SHOW_SQL:false}
   ai:
     ollama:
       base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
@@ -48,13 +54,30 @@ spring:
         initialize-schema: true
         collection-name: ${CHROMA_COLLECTION:psych-agent-knowledge}
   mail:
-    host: smtp.qq.com
-    port: 587
-    username: 1585017154@qq.com
-    password: fskkajjqbjbsjcee
+    host: ${MAIL_HOST:smtp.qq.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
           auth: true
           starttls:
             enable: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  info:
+    env:
+      enabled: true
+
+info:
+  app:
+    name: Psych Agent
+    description: Psychology support agent platform

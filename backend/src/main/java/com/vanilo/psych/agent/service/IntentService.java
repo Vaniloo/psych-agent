@@ -4,23 +4,23 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vanilo.psych.agent.dto.IntentResult;
 import com.vanilo.psych.agent.enums.IntentType;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.util.List;
 
 @Service
 public class IntentService {
-    private final ChatClient chatClient;
+    private final LlmService llmService;
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate stringRedisTemplate;
+    private final RiskDetectionService riskDetectionService;
 
-    public IntentService(ChatClient.Builder chatClientBuilder, ObjectMapper objectMapper, StringRedisTemplate stringRedisTemplate) {
-        this.chatClient = chatClientBuilder.build();
+    public IntentService(LlmService llmService, ObjectMapper objectMapper, StringRedisTemplate stringRedisTemplate, RiskDetectionService riskDetectionService) {
+        this.llmService = llmService;
         this.objectMapper = objectMapper;
         this.stringRedisTemplate = stringRedisTemplate;
+        this.riskDetectionService = riskDetectionService;
     }
     public IntentResult classify(String message) {
         if (message == null || message.isBlank()) {
@@ -37,7 +37,7 @@ public class IntentService {
             }
         }
         System.out.println("cache missed");
-        if(isHighRisk(message)){
+        if(riskDetectionService.isHighRisk(message)){
             IntentResult intentResult = new IntentResult(IntentType.RISK,1.0,"命中风险词");
 
             try {
@@ -51,8 +51,7 @@ public class IntentService {
             }
             return intentResult;
         }
-        String result=chatClient.prompt()
-                .system("""
+        String result=llmService.complete("""
 你是一个意图分类器
 要求：
 1. 只返回 JSON
@@ -70,10 +69,7 @@ public class IntentService {
   "confidence": 0.xx,
   "reason": "..."
 }
-                        """)
-                .user(message)
-                .call()
-                .content();
+                        """, message);
         int start = result.indexOf("{");
         int end = result.lastIndexOf("}");
 
@@ -96,15 +92,5 @@ public class IntentService {
         }
 
 
-    }
-    private boolean isHighRisk(String message) {
-        List<String> riskWords=List.of(
-                "想死",
-                "不想活",
-                "自杀",
-                "结束自己",
-                "活着没意义"
-        );
-        return riskWords.stream().anyMatch(message::contains);
     }
 }

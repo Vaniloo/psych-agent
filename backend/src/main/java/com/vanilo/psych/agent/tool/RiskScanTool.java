@@ -1,9 +1,8 @@
 package com.vanilo.psych.agent.tool;
 
-import com.vanilo.psych.agent.dto.AnalysisResult;
 import com.vanilo.psych.agent.dto.ToolInfoResponse;
 import com.vanilo.psych.agent.dto.ToolParameterInfo;
-import com.vanilo.psych.agent.service.PsychologicalService;
+import com.vanilo.psych.agent.service.RiskDetectionService;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -11,10 +10,10 @@ import java.util.Map;
 
 @Component
 public class RiskScanTool implements ToolExecutor {
-    private final PsychologicalService psychologicalService;
+    private final RiskDetectionService riskDetectionService;
 
-    public RiskScanTool(PsychologicalService psychologicalService) {
-        this.psychologicalService = psychologicalService;
+    public RiskScanTool(RiskDetectionService riskDetectionService) {
+        this.riskDetectionService = riskDetectionService;
     }
 
     @Override
@@ -26,19 +25,20 @@ public class RiskScanTool implements ToolExecutor {
     public ToolInfoResponse getToolInfo() {
         return new ToolInfoResponse(
                 getName(),
-                "扫描用户消息的心理风险等级与主要情绪，不写入正式报告",
-                List.of(
-                        new ToolParameterInfo("message", "string", true, "待分析的用户消息")
-                )
+                "使用确定性规则快速扫描文本中的高风险表达，不写入正式报告",
+                List.of(new ToolParameterInfo("text", "string", true, "待扫描文本"))
         );
     }
 
     @Override
-    public AnalysisResult execute(Map<String, Object> arguments) {
-        String message = arguments.get("message") == null ? null : arguments.get("message").toString();
-        if (message == null || message.isBlank()) {
-            throw new RuntimeException("message不能为空");
-        }
-        return psychologicalService.scan(message);
+    public Map<String, Object> execute(Map<String, Object> arguments) {
+        Object rawText = arguments.containsKey("text") ? arguments.get("text") : arguments.get("message");
+        String text = rawText == null ? "" : rawText.toString();
+        boolean highRisk = riskDetectionService.isHighRisk(text);
+        return Map.of(
+                "highRisk", highRisk,
+                "risk", highRisk ? "high" : "not_high",
+                "action", highRisk ? "trigger_crisis_workflow" : "continue_normal_flow"
+        );
     }
 }

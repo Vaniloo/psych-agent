@@ -1,66 +1,29 @@
-# 测试现状
+# 测试报告
 
-本文档描述当前仓库里可以直接看到的测试现状。
+默认单元测试覆盖：
 
-## 已存在测试
+- 明确高风险表达识别
+- 普通焦虑不误判为高风险
+- 危机回复包含 12356 / 120 / 110 资源
+- 工具参数校验与结构化执行结果
+- 策略推荐在高风险输入时绕过模型扫描
 
-### 1. 应用上下文测试
+运行：
 
-文件：
-
-- `backend/src/test/java/com/vanilo/psych/agent/PsychAgentApplicationTests.java`
-
-特点：
-
-- 基于 `@SpringBootTest`
-- 需要完整 Spring 上下文
-- 通常依赖数据库等外部配置可用
-
-### 2. 工具调用服务单测
-
-文件：
-
-- `backend/src/test/java/com/vanilo/psych/agent/service/ToolCallServiceTests.java`
-
-覆盖点：
-
-- 工具结果包装
-- 必填参数校验
-- 参数类型校验
-
-## 当前测试特点
-
-- 单测数量较少
-- 集成测试依赖外部服务环境
-- 文档中不应假定“所有接口都已经有自动化覆盖”
-
-## 本地验证建议
-
-### 轻量验证
-
-```powershell
+```bash
 cd backend
-$env:JAVA_HOME='C:\Program Files\Java\jdk-22'
-.\mvnw.cmd -Dtest=ToolCallServiceTests test
+./mvnw test
 ```
 
-### 编译验证
+`PsychAgentApplicationTests` 是外部服务集成测试，需要 MySQL、Redis、Chroma、Ollama，默认标记为 Disabled。
 
-```powershell
-cd backend
-$env:JAVA_HOME='C:\Program Files\Java\jdk-22'
-.\mvnw.cmd -DskipTests compile
-```
+当前结果：8 个测试通过，1 个外部依赖集成测试跳过。
 
-### 完整上下文测试
+本次回归还包含：
 
-```powershell
-cd backend
-$env:JAVA_HOME='C:\Program Files\Java\jdk-22'
-.\mvnw.cmd test
-```
+- `node --check frontend/app.js` 与 `frontend/config.js`
+- `docker compose config --quiet`
+- 1440 x 1000 桌面端与 390 x 844 移动端页面检查，无横向溢出
+- MySQL `EXPLAIN` 验证两条报告查询分别命中对应复合索引
 
-注意：
-
-- 如果本地 MySQL 不可用，完整测试很可能失败
-- 这类失败通常是环境依赖问题，不一定代表业务代码本身编译错误
+本机实启动已验证 MySQL 与 Ollama 配置；Chroma 未运行时，后端会在向量库初始化阶段明确停止并输出连接错误。

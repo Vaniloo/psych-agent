@@ -10,28 +10,28 @@ public class MessageRouterService {
     private final IntentService intentService;
     private final ChatService chatService;
     private final PsychologicalService psychologicalService;
-    private final ExcelRecordService excelRecordService;
-    private final MailAlertService mailAlertService;
-    private final RiskAlertLockService riskAlertLockService;
     private final UserMessageLockService userMessageLockService;
     private final ConversationMemoryService conversationMemoryService;
+    private final CrisisSupportService crisisSupportService;
+    private final CrisisWorkflowService crisisWorkflowService;
+    private final RoleCardService roleCardService;
 
     public MessageRouterService(IntentService intentService,
                                 ChatService chatService,
                                 PsychologicalService psychologicalService,
-                                ExcelRecordService excelRecordService,
-                                MailAlertService mailAlertService,
-                                RiskAlertLockService riskAlertLockService,
                                 UserMessageLockService userMessageLockService,
-                                ConversationMemoryService conversationMemoryService) {
+                                ConversationMemoryService conversationMemoryService,
+                                CrisisSupportService crisisSupportService,
+                                CrisisWorkflowService crisisWorkflowService,
+                                RoleCardService roleCardService) {
         this.intentService = intentService;
         this.chatService = chatService;
         this.psychologicalService = psychologicalService;
-        this.excelRecordService = excelRecordService;
-        this.mailAlertService = mailAlertService;
-        this.riskAlertLockService = riskAlertLockService;
         this.userMessageLockService = userMessageLockService;
         this.conversationMemoryService = conversationMemoryService;
+        this.crisisSupportService = crisisSupportService;
+        this.crisisWorkflowService = crisisWorkflowService;
+        this.roleCardService = roleCardService;
     }
     public MessageResponse route(String message,String username){
         if(message==null||username==null||message.isBlank()||username.isBlank()){
@@ -43,10 +43,11 @@ public class MessageRouterService {
         }
         Long sessionId = conversationMemoryService.resolveSessionId(username, null, message);
         String memoryContext = conversationMemoryService.buildMemoryContext(username, sessionId);
+        String rolePrompt = roleCardService.buildRolePrompt(username);
         IntentResult result = intentService.classify(message);
         switch (result.getIntent()){
             case CHAT:{
-                String reply = chatService.plainChat(message, memoryContext);
+                String reply = chatService.plainChat(message, memoryContext, rolePrompt);
                 conversationMemoryService.rememberTurn(username, sessionId, message, reply);
                 return new MessageResponse(
                         result.getIntent(),
@@ -56,22 +57,9 @@ public class MessageRouterService {
             }
 
 
-            case CONSULT, RISK: {
+            case CONSULT: {
                 AnalyzeResponse response = psychologicalService.analyze(message,username);
-                if("high".equalsIgnoreCase(response.getRisk())){
-                    boolean locked=riskAlertLockService.tryLock(username,message);
-                    if(locked){
-                        excelRecordService.appendHighRiskRecord(username,message,response);
-                        try {
-                            mailAlertService.sendHighRiskEmail(username,message,response);
-                        }
-                        catch(Exception e){
-                            e.printStackTrace();
-                        }
-                        System.out.println("Locked");
-                    }
-                }
-                String reply = chatService.ragChat(message, memoryContext);
+                String reply = chatService.ragChat(message, memoryContext, rolePrompt);
                 conversationMemoryService.rememberTurn(username, sessionId, message, reply);
                 return  new MessageResponse(
                         result.getIntent(),
@@ -81,9 +69,24 @@ public class MessageRouterService {
 
             }
 
+            case RISK: {
+                AnalyzeResponse response = crisisWorkflowService.handle(username, message);
+                String reply = crisisSupportService.crisisReply();
+                conversationMemoryService.rememberTurn(username, sessionId, message, reply);
+                return new MessageResponse(
+                        result.getIntent(),
+                        reply,
+                        response,
+                        true,
+                        crisisSupportService.helpCenterUrl(),
+                        crisisSupportService.resources()
+                );
+            }
+
         }
         throw new RuntimeException("解析错误");
 
 
     }
+
 }

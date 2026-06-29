@@ -13,4 +13,14 @@ import java.util.List;
 public class DashboardResponse {
     private List<ReportSummaryResponse> reportSummaryResponse;
     private List<TopRiskUserResponse> topRiskUserResponse;
+    private List<RiskCountResponse> riskDistribution;
+    private List<EmotionTrendResponse> emotionTrend;
+
+    public DashboardResponse(List<ReportSummaryResponse> reportSummaryResponse,
+                             List<TopRiskUserResponse> topRiskUserResponse) {
+        this.reportSummaryResponse = reportSummaryResponse;
+        this.topRiskUserResponse = topRiskUserResponse;
+        this.riskDistribution = List.of();
+        this.emotionTrend = List.of();
+    }
 }

@@ -28,5 +28,9 @@ public class User{
     @Column(nullable = false)
     private String role;
 
+    @ManyToOne
+    @JoinColumn(name = "active_role_card_id")
+    private RoleCard activeRoleCard;
+
 
 }

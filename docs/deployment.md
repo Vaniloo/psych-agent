@@ -1,47 +1,22 @@
-# 部署与运行说明
+# 部署
 
-本文档描述当前源码在本地或开发环境中的基本运行方式。
+## Docker Compose
 
-## 依赖服务
-
-后端默认依赖：
-
-- MySQL
-- Redis
-- Ollama
-- Chroma
-- SMTP 邮件服务
-
-## 默认配置
-
-来自 `backend/src/main/resources/application.yaml`：
-
-- `server.port=8080`
-- `MYSQL_URL=jdbc:mysql://localhost:3306/psych_agent?...`
-- `MYSQL_USERNAME=root`
-- `REDIS_HOST=localhost`
-- `REDIS_PORT=6379`
-- `OLLAMA_BASE_URL=http://localhost:11434`
-- `CHROMA_HOST=http://localhost`
-- `CHROMA_PORT=8000`
-
-## 启动后端
-
-```powershell
-cd backend
-.\mvnw.cmd spring-boot:run
+```bash
+cp .env.example .env
+docker compose up --build
 ```
 
-## 启动前端
+Compose 包含 MySQL、Redis、Chroma、Ollama、模型初始化、后端和 Nginx 前端。
 
-```powershell
-cd frontend
-python -m http.server 5173
-```
+## 必填生产配置
 
-## 当前部署层面的注意事项
+- `JWT_SECRET`
+- `MYSQL_PASSWORD` / `MYSQL_ROOT_PASSWORD`
+- `MAIL_USERNAME` / `MAIL_PASSWORD`（启用邮件告警时）
 
-- 默认配置中包含本地开发值，应在真实环境中改为环境变量注入
-- 邮件配置当前写在 `application.yaml` 中，生产环境不应直接沿用
-- 完整功能依赖 Ollama、Chroma 和数据库服务同时可用
-- 完整测试依赖数据库连接正常
+## 健康依赖
+
+后端启动依赖 MySQL、Redis、Chroma 和 Ollama。Docker Compose 使用健康检查控制启动顺序。
+
+启动后检查 `http://localhost:8080/actuator/health`。`/actuator/metrics` 需要 ADMIN JWT。

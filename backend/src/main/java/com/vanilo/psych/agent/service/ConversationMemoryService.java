@@ -16,11 +16,12 @@ import com.vanilo.psych.agent.repository.ConversationMessageRepository;
 import com.vanilo.psych.agent.repository.ConversationSessionRepository;
 import com.vanilo.psych.agent.repository.UserProfileRepository;
 import com.vanilo.psych.agent.repository.UserRepository;
-import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -28,7 +29,7 @@ import java.util.stream.Collectors;
 
 @Service
 public class ConversationMemoryService {
-    private final ChatClient chatClient;
+    private final LlmService llmService;
     private final ObjectMapper objectMapper;
     private final UserRepository userRepository;
     private final ConversationMessageRepository conversationMessageRepository;
@@ -36,16 +37,18 @@ public class ConversationMemoryService {
     private final ConversationMemoryRepository conversationMemoryRepository;
     private final UserProfileRepository userProfileRepository;
     private final UserProfileService userProfileService;
+    private final StringRedisTemplate stringRedisTemplate;
 
-    public ConversationMemoryService(ChatClient.Builder chatClientBuilder,
+    public ConversationMemoryService(LlmService llmService,
                                      ObjectMapper objectMapper,
                                      UserRepository userRepository,
                                      ConversationMessageRepository conversationMessageRepository,
                                      ConversationSessionRepository conversationSessionRepository,
                                      ConversationMemoryRepository conversationMemoryRepository,
                                      UserProfileRepository userProfileRepository,
-                                     UserProfileService userProfileService) {
-        this.chatClient = chatClientBuilder.build();
+                                     UserProfileService userProfileService,
+                                     StringRedisTemplate stringRedisTemplate) {
+        this.llmService = llmService;
         this.objectMapper = objectMapper;
         this.userRepository = userRepository;
         this.conversationMessageRepository = conversationMessageRepository;
@@ -53,6 +56,7 @@ public class ConversationMemoryService {
         this.conversationMemoryRepository = conversationMemoryRepository;
         this.userProfileRepository = userProfileRepository;
         this.userProfileService = userProfileService;
+        this.stringRedisTemplate = stringRedisTemplate;
     }
 
     public Long resolveSessionId(String username, Long sessionId, String firstMessage) {
@@ -65,14 +69,7 @@ public class ConversationMemoryService {
         ConversationSession session = findSession(user, sessionId);
         ConversationMemory memory = getOrCreateMemory(user);
         UserProfile profile = userProfileService.getOrCreateProfile(user);
-        List<ConversationMessage> recentMessages = conversationMessageRepository.findTop12ByUserAndSessionOrderByCreatedAtDesc(user, session);
-        Collections.reverse(recentMessages);
-
-        String recentContext = recentMessages.isEmpty()
-                ? "暂无最近对话"
-                : recentMessages.stream()
-                .map(message -> "%s：%s".formatted(toChineseRole(message.getRole()), message.getContent()))
-                .collect(Collectors.joining("\n"));
+        String recentContext = loadRecentContext(user, session);
 
         return """
                 【短期记忆：最近对话】
@@ -153,8 +150,7 @@ public class ConversationMemoryService {
         ConversationMemory memory = getOrCreateMemory(user);
         UserProfile profile = userProfileService.getOrCreateProfile(user);
 
-        String json = chatClient.prompt()
-                .system("""
+        String json = llmService.complete("""
                         你是一个心理支持产品的记忆整理助手。
                         请基于旧记忆、旧画像和最新一轮对话，更新多级对话记忆与用户画像。
 
@@ -177,8 +173,7 @@ public class ConversationMemoryService {
                           "riskSignals": "风险信号",
                           "supportGoals": "支持目标"
                         }
-                        """)
-                .user("""
+                        """, """
                         当前会话标题：%s
                         旧当前会话摘要：%s
                         旧中期摘要：%s
@@ -205,9 +200,7 @@ public class ConversationMemoryService {
                         valueOrDefault(profile.getSupportGoals(), "暂无"),
                         userMessage,
                         assistantReply
-                ))
-                .call()
-                .content();
+                ));
 
         try {
             Map<String, String> updates = objectMapper.readValue(extractJson(json), new TypeReference<>() {});
@@ -233,6 +226,7 @@ public class ConversationMemoryService {
         message.setContent(limit(content, 4000));
         message.setCreatedAt(LocalDateTime.now());
         conversationMessageRepository.save(message);
+        cacheRecentMessage(user, session, role, message.getContent());
         session.setUpdatedAt(message.getCreatedAt());
         conversationSessionRepository.save(session);
     }
@@ -263,6 +257,50 @@ public class ConversationMemoryService {
             memory.setUpdatedAt(LocalDateTime.now());
             return conversationMemoryRepository.save(memory);
         });
+    }
+
+    private String loadRecentContext(User user, ConversationSession session) {
+        String key = contextKey(user, session);
+        try {
+            List<String> cached = stringRedisTemplate.opsForList().range(key, 0, -1);
+            if (cached != null && !cached.isEmpty()) {
+                return cached.stream().map(this::formatCachedMessage).collect(Collectors.joining("\n"));
+            }
+        } catch (Exception ignored) {
+        }
+        List<ConversationMessage> recentMessages = conversationMessageRepository
+                .findTop12ByUserAndSessionOrderByCreatedAtDesc(user, session);
+        Collections.reverse(recentMessages);
+        if (recentMessages.isEmpty()) {
+            return "暂无最近对话";
+        }
+        return recentMessages.stream()
+                .map(message -> "%s：%s".formatted(toChineseRole(message.getRole()), message.getContent()))
+                .collect(Collectors.joining("\n"));
+    }
+
+    private void cacheRecentMessage(User user, ConversationSession session, String role, String content) {
+        String key = contextKey(user, session);
+        try {
+            String value = objectMapper.writeValueAsString(Map.of("role", role, "content", content));
+            stringRedisTemplate.opsForList().rightPush(key, value);
+            stringRedisTemplate.opsForList().trim(key, -12, -1);
+            stringRedisTemplate.expire(key, Duration.ofHours(24));
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String formatCachedMessage(String value) {
+        try {
+            Map<String, String> message = objectMapper.readValue(value, new TypeReference<>() {});
+            return "%s：%s".formatted(toChineseRole(message.get("role")), message.getOrDefault("content", ""));
+        } catch (Exception e) {
+            return value;
+        }
+    }
+
+    private String contextKey(User user, ConversationSession session) {
+        return "context:%d:%d".formatted(user.getId(), session.getId());
     }
 
     private ConversationSession getOrCreateSession(User user, Long sessionId, String firstMessage) {
