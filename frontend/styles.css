@@ -145,6 +145,16 @@ textarea:focus {
   padding: 14px;
 }
 
+.session-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.session-panel span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .field-row,
 .settings-grid label,
 .profile-grid label {

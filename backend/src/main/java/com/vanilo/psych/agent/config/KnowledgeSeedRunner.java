@@ -2,16 +2,21 @@ package com.vanilo.psych.agent.config;
 
 import com.vanilo.psych.agent.dto.KnowledgeAddRequest;
 import com.vanilo.psych.agent.service.KnowledgeService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Component
 public class KnowledgeSeedRunner implements ApplicationRunner {
     private static final String SOURCE = "seed:psych-faq:v1";
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeSeedRunner.class);
 
     private final KnowledgeService knowledgeService;
     private final boolean enabled;
@@ -24,16 +29,26 @@ public class KnowledgeSeedRunner implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        if (!enabled || hasSeedKnowledge()) {
+        if (!enabled) {
             return;
         }
-        seedItems().forEach(knowledgeService::addKnowledge);
-    }
-
-    private boolean hasSeedKnowledge() {
-        return knowledgeService.listAllDocuments()
-                .stream()
-                .anyMatch(document -> SOURCE.equals(document.getSource()));
+        List<KnowledgeAddRequest> seeds = seedItems();
+        try {
+            Set<String> existingContents = knowledgeService.listAllDocuments().stream()
+                    .filter(document -> SOURCE.equals(document.getSource()))
+                    .map(document -> document.getContent().strip())
+                    .collect(Collectors.toSet());
+            if (existingContents.size() >= seeds.size()) {
+                return;
+            }
+            knowledgeService.reindexBySource(SOURCE);
+            seeds.stream()
+                    .filter(seed -> !existingContents.contains(seed.getContent()))
+                    .forEach(knowledgeService::addKnowledge);
+        } catch (RuntimeException exception) {
+            log.warn("Psychology knowledge seed is temporarily unavailable; startup will continue: {}",
+                    exception.getMessage());
+        }
     }
 
     private List<KnowledgeAddRequest> seedItems() {

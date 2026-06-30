@@ -8,6 +8,8 @@ import com.vanilo.psych.agent.dto.KnowledgeImportRequest;
 import com.vanilo.psych.agent.dto.KnowledgeSearchResponse;
 import com.vanilo.psych.agent.entity.KnowledgeDocument;
 import com.vanilo.psych.agent.repository.KnowledgeDocumentRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -25,6 +27,8 @@ import java.util.*;
 
 @Service
 public class KnowledgeService {
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeService.class);
+    private static final String RAG_CACHE_VERSION_KEY = "rag:cache:version";
     private static final int DEFAULT_RECALL_LIMIT = 18;
     private static final int DEFAULT_RESULT_LIMIT = 6;
     private static final int MAX_RECALL_LIMIT = 30;
@@ -39,7 +43,13 @@ public class KnowledgeService {
     private final RerankService rerankService;
 
 
-    public KnowledgeService(VectorStore vectorStore, KnowledgeDocumentRepository repository, StringRedisTemplate stringRedisTemplate, ObjectMapper objectMapper, KnowledgeLockService knowledgeLockService, TextChunkService textChunkService,RerankService rerankService) {
+    public KnowledgeService(VectorStore vectorStore,
+                            KnowledgeDocumentRepository repository,
+                            StringRedisTemplate stringRedisTemplate,
+                            ObjectMapper objectMapper,
+                            KnowledgeLockService knowledgeLockService,
+                            TextChunkService textChunkService,
+                            RerankService rerankService) {
         this.vectorStore = vectorStore;
         this.repository = repository;
         this.stringRedisTemplate = stringRedisTemplate;
@@ -48,40 +58,36 @@ public class KnowledgeService {
         this.textChunkService = textChunkService;
         this.rerankService = rerankService;
     }
-    public void addKnowledge(KnowledgeAddRequest knowledgeAddRequest){
-        if(knowledgeAddRequest.getContent() == null||knowledgeAddRequest.getContent().isBlank()){
+    public void addKnowledge(KnowledgeAddRequest knowledgeAddRequest) {
+        if (knowledgeAddRequest == null
+                || knowledgeAddRequest.getContent() == null
+                || knowledgeAddRequest.getContent().isBlank()) {
             throw new RuntimeException("content不能为空");
         }
         String content = knowledgeAddRequest.getContent();
-        boolean locked= knowledgeLockService.tryAddLock(content);
-        if (locked) {
-            List<KnowledgeSearchResponse> searchResults = searchKnowledge(content);
-            String checkContent = searchResults.isEmpty() ? null : searchResults.get(0).getContent();
-            if(checkContent!=null&&checkContent.equals(content)){
-                return;
-            }
-            String id= UUID.randomUUID().toString();
-            String category = knowledgeAddRequest.getCategory()==null?"default":knowledgeAddRequest.getCategory();
-            String source = knowledgeAddRequest.getSource()==null?"unknown":knowledgeAddRequest.getSource();
-            KnowledgeDocument doc=new KnowledgeDocument(
-              id,content,category, source, LocalDateTime.now()
-            );
-            repository.save(doc);
-            Map<String,Object> metadata = new HashMap<>();
-            metadata.put("id",id);
-            metadata.put("category",category);
-            metadata.put("source",source);
-            Document document = Document.builder()
-                    .id(id)
-                    .text(content)
-                    .metadata(metadata)
-                    .build();
-            vectorStore.add(List.of(document));
+        Optional<KnowledgeDocument> existing = repository.findFirstByContent(content);
+        if (existing.isPresent()) {
+            vectorStore.add(List.of(toVectorDocument(existing.get())));
             clearRagCache();
+            return;
         }
-        else{
-            System.out.println("duplicate knowledge add skipped");
+
+        if (!knowledgeLockService.tryAddLock(content)) {
+            return;
         }
+        String id = UUID.randomUUID().toString();
+        String category = knowledgeAddRequest.getCategory() == null ? "default" : knowledgeAddRequest.getCategory();
+        String source = knowledgeAddRequest.getSource() == null ? "unknown" : knowledgeAddRequest.getSource();
+        KnowledgeDocument document = new KnowledgeDocument(id, content, category, source, LocalDateTime.now());
+        Document vectorDocument = toVectorDocument(document);
+        vectorStore.add(List.of(vectorDocument));
+        try {
+            repository.save(document);
+        } catch (RuntimeException exception) {
+            vectorStore.delete(List.of(id));
+            throw exception;
+        }
+        clearRagCache();
     }
     public List<KnowledgeSearchResponse> searchKnowledge(String query,String category){
         return searchKnowledgeInternal(query, category, DEFAULT_RESULT_LIMIT);
@@ -93,8 +99,8 @@ public class KnowledgeService {
         if(!repository.existsById(id)){
             throw new RuntimeException("id="+id+"不存在");
         }
-        repository.deleteById(id);
         vectorStore.delete(List.of(id));
+        repository.deleteById(id);
         clearRagCache();
     }
     public List<KnowledgeDocument> listAllDocuments(){
@@ -129,7 +135,6 @@ public class KnowledgeService {
         KnowledgeDocument doc=new KnowledgeDocument(
                 id,content,category, source, LocalDateTime.now()
         );
-        repository.save(doc);
         List<String> chunks =textChunkService.splitText(knowledgeImportRequest.getContent(),
                 knowledgeImportRequest.getChunkSize()==null?400:knowledgeImportRequest.getChunkSize(),
                 knowledgeImportRequest.getOverlap()==null?80:knowledgeImportRequest.getOverlap());
@@ -147,13 +152,45 @@ public class KnowledgeService {
 
         }
         vectorStore.add(docs);
+        try {
+            repository.save(doc);
+        } catch (RuntimeException exception) {
+            vectorStore.delete(docs.stream().map(Document::getId).toList());
+            throw exception;
+        }
         clearRagCache();
 
     }
-    private void clearRagCache(){
-        Set<String> keys = stringRedisTemplate.keys("rag:*");
-        if(keys!=null&&!keys.isEmpty()){
-            stringRedisTemplate.delete(keys);
+
+    public int reindexBySource(String source) {
+        if (source == null || source.isBlank()) {
+            throw new RuntimeException("source不能为空");
+        }
+        List<KnowledgeDocument> documents = repository.findBySource(source);
+        if (documents.isEmpty()) {
+            return 0;
+        }
+        vectorStore.add(documents.stream().map(this::toVectorDocument).toList());
+        clearRagCache();
+        return documents.size();
+    }
+
+    private Document toVectorDocument(KnowledgeDocument document) {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("id", document.getId());
+        metadata.put("category", document.getCategory());
+        metadata.put("source", document.getSource());
+        return Document.builder()
+                .id(document.getId())
+                .text(document.getContent())
+                .metadata(metadata)
+                .build();
+    }
+    private void clearRagCache() {
+        try {
+            stringRedisTemplate.opsForValue().increment(RAG_CACHE_VERSION_KEY);
+        } catch (RuntimeException exception) {
+            log.debug("Unable to invalidate RAG cache; retrieval will continue without Redis", exception);
         }
     }
 
@@ -163,17 +200,15 @@ public class KnowledgeService {
         }
         String normalizedQuery = normalizeQuery(query);
         String normalizedCategory = normalizeCategory(category);
-        String cacheKey = "rag:v2:%s:%d:%s".formatted(
+        String cacheKey = "rag:v3:%s:%s:%d:%s".formatted(
+                readCacheVersion(),
                 normalizedCategory == null ? "all" : normalizedCategory,
                 resultLimit,
                 normalizedQuery
         );
-        String cached=stringRedisTemplate.opsForValue().get(cacheKey);
-        if(cached!=null){
-            try {
-                return objectMapper.readValue(cached,new TypeReference<List<KnowledgeSearchResponse>>(){});
-            } catch (JsonProcessingException ignored) {
-            }
+        List<KnowledgeSearchResponse> cached = readCachedResults(cacheKey);
+        if (cached != null) {
+            return cached;
         }
 
         List<KnowledgeSearchResponse> candidates = recall(normalizedQuery, normalizedCategory);
@@ -186,15 +221,42 @@ public class KnowledgeService {
                 candidates,
                 resultLimit
         );
+        writeCachedResults(cacheKey, results);
+        return results;
+    }
+
+    private String readCacheVersion() {
+        try {
+            String version = stringRedisTemplate.opsForValue().get(RAG_CACHE_VERSION_KEY);
+            return version == null ? "0" : version;
+        } catch (RuntimeException exception) {
+            log.debug("Unable to read RAG cache version; retrieval will continue without Redis", exception);
+            return "offline";
+        }
+    }
+
+    private List<KnowledgeSearchResponse> readCachedResults(String cacheKey) {
+        try {
+            String cached = stringRedisTemplate.opsForValue().get(cacheKey);
+            return cached == null
+                    ? null
+                    : objectMapper.readValue(cached, new TypeReference<List<KnowledgeSearchResponse>>() {});
+        } catch (RuntimeException | JsonProcessingException exception) {
+            log.debug("Unable to read RAG cache key {}", cacheKey, exception);
+            return null;
+        }
+    }
+
+    private void writeCachedResults(String cacheKey, List<KnowledgeSearchResponse> results) {
         try {
             stringRedisTemplate.opsForValue().set(
                     cacheKey,
                     objectMapper.writeValueAsString(results),
                     Duration.ofMinutes(10)
             );
-        } catch (JsonProcessingException ignored) {
+        } catch (RuntimeException | JsonProcessingException exception) {
+            log.debug("Unable to write RAG cache key {}", cacheKey, exception);
         }
-        return results;
     }
 
     private List<KnowledgeSearchResponse> recall(String query, String category) {
@@ -207,7 +269,8 @@ public class KnowledgeService {
             }
             List<Document> documentList=vectorStore.similaritySearch(builder.build());
             return toSearchResponses(documentList);
-        } catch (Exception e) {
+        } catch (Exception exception) {
+            log.warn("Vector retrieval failed; falling back to MySQL keyword search: {}", exception.getMessage());
             return Collections.emptyList();
         }
     }

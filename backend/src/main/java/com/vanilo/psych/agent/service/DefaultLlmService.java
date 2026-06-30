@@ -1,5 +1,6 @@
 package com.vanilo.psych.agent.service;
 
+import com.vanilo.psych.agent.exception.ServiceUnavailableException;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -24,7 +25,7 @@ public class DefaultLlmService implements LlmService {
     @Override
     public String complete(String systemPrompt, String userPrompt) {
         if (Instant.now().isBefore(openUntil)) {
-            throw new RuntimeException("AI 服务暂时不可用，请稍后重试");
+            throw new ServiceUnavailableException("AI 服务暂时不可用，请稍后重试");
         }
         RuntimeException lastError = null;
         for (int attempt = 0; attempt < 2; attempt++) {
@@ -44,7 +45,7 @@ public class DefaultLlmService implements LlmService {
             openUntil = Instant.now().plus(Duration.ofSeconds(30));
             consecutiveFailures.set(0);
         }
-        throw new RuntimeException("AI 服务调用失败", lastError);
+        throw new ServiceUnavailableException("AI 服务调用失败", lastError);
     }
 
     @Override

@@ -13,6 +13,7 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 function init() {
+  normalizeStoredSession();
   bindNavigation();
   bindAuth();
   bindChat();
@@ -24,6 +25,7 @@ function init() {
   bindSettings();
   bindToolDebug();
   syncConnectionLabel();
+  syncAuthUi();
   applyRoleVisibility();
   hydrateSettings();
   addMessage("assistant", "你好，我是 Psych Agent。登录后可以开始对话、查看画像和报告。");
@@ -55,13 +57,16 @@ async function requestJson(path, options, allowFallback) {
     const response = await fetch(`${state.apiBaseUrl}${path}`, options);
     const text = await response.text();
     const data = text ? parseJson(text) : null;
+    if (response.status === 401 && options.headers?.Authorization) {
+      clearSession(false);
+    }
     if (!response.ok || data?.success === false) {
       throw new Error(data?.message || text || `请求失败：${response.status}`);
     }
     return data ?? text;
   } catch (error) {
     const fallbackUrl = getLoopbackFallbackUrl(state.apiBaseUrl);
-    if (allowFallback && fallbackUrl) {
+    if (error instanceof TypeError && allowFallback && fallbackUrl) {
       state.apiBaseUrl = fallbackUrl;
       localStorage.setItem("psychAgentApiBaseUrl", state.apiBaseUrl);
       hydrateSettings();
@@ -126,7 +131,9 @@ function bindAuth() {
       state.user = { id: data.id, username: data.username, role: data.role };
       localStorage.setItem("psychAgentToken", state.token);
       localStorage.setItem("psychAgentUser", JSON.stringify(state.user));
+      $("#password").value = "";
       syncConnectionLabel();
+      syncAuthUi();
       applyRoleVisibility();
       toast("登录成功");
       await loadConversations();
@@ -149,11 +156,44 @@ function bindAuth() {
         auth: false,
         body: JSON.stringify({ ...payload, role: "USER" }),
       });
+      $("#password").value = "";
       toast("注册成功，可以登录了");
     } catch (error) {
       toast(error.message);
     }
   });
+
+  $("#logoutBtn").addEventListener("click", () => {
+    clearSession(true);
+  });
+}
+
+function normalizeStoredSession() {
+  if (state.token && state.user) return;
+  state.token = "";
+  state.user = null;
+  localStorage.removeItem("psychAgentToken");
+  localStorage.removeItem("psychAgentUser");
+}
+
+function clearSession(showToast) {
+  const hadSession = Boolean(state.token || state.user);
+  state.token = "";
+  state.user = null;
+  state.currentSessionId = null;
+  localStorage.removeItem("psychAgentToken");
+  localStorage.removeItem("psychAgentUser");
+  $("#username").value = "";
+  $("#password").value = "";
+  $("#conversationList").innerHTML = "";
+  $("#chatLog").innerHTML = "";
+  addMessage("assistant", "你好，我是 Psych Agent。登录后可以开始对话、查看画像和报告。");
+  syncConnectionLabel();
+  syncAuthUi();
+  applyRoleVisibility();
+  if (showToast && hadSession) {
+    toast("已退出登录");
+  }
 }
 
 function readCredentials() {
@@ -657,8 +697,17 @@ function hydrateSettings() {
 }
 
 function syncConnectionLabel() {
-  const label = state.user ? `${state.user.username} · ${state.apiBaseUrl}` : state.apiBaseUrl;
+  const label = state.token && state.user
+    ? `${state.user.username} · ${state.apiBaseUrl}`
+    : state.apiBaseUrl;
   $("#connectionLabel").textContent = label;
+}
+
+function syncAuthUi() {
+  const loggedIn = Boolean(state.token && state.user);
+  $("#authFields").classList.toggle("hidden", loggedIn);
+  $("#sessionPanel").classList.toggle("hidden", !loggedIn);
+  $("#sessionUsername").textContent = loggedIn ? state.user.username : "";
 }
 
 function empty(text) {

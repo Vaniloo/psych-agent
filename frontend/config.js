@@ -8,7 +8,7 @@
     localServices: {
       mysql: "localhost:3306/psych_agent",
       redis: "localhost:6379",
-      ollama: "http://localhost:11434",
+      ollama: "http://localhost:11435",
       chroma: "http://localhost:8000",
     },
   };

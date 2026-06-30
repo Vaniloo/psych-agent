@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Psych Agent</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20260630" />
   </head>
   <body>
     <div class="app-shell">
@@ -29,17 +29,24 @@
         </nav>
 
         <section class="auth-panel" aria-label="登录">
-          <div class="field-row">
-            <label for="username">账号</label>
-            <input id="username" autocomplete="username" placeholder="username" />
+          <div id="authFields">
+            <div class="field-row">
+              <label for="username">账号</label>
+              <input id="username" autocomplete="username" placeholder="username" />
+            </div>
+            <div class="field-row">
+              <label for="password">密码</label>
+              <input id="password" autocomplete="current-password" type="password" placeholder="password" />
+            </div>
+            <div class="button-row">
+              <button id="loginBtn" class="primary-action" type="button">登录</button>
+              <button id="registerBtn" type="button">注册</button>
+            </div>
           </div>
-          <div class="field-row">
-            <label for="password">密码</label>
-            <input id="password" autocomplete="current-password" type="password" placeholder="password" />
-          </div>
-          <div class="button-row">
-            <button id="loginBtn" class="primary-action" type="button">登录</button>
-            <button id="registerBtn" type="button">注册</button>
+          <div id="sessionPanel" class="session-panel hidden">
+            <span>当前账号</span>
+            <strong id="sessionUsername"></strong>
+            <button id="logoutBtn" type="button">退出登录</button>
           </div>
         </section>
       </aside>
@@ -244,7 +251,7 @@
     </div>
 
     <div id="toast" class="toast" role="status"></div>
-    <script src="./config.js"></script>
-    <script src="./app.js"></script>
+    <script src="./config.js?v=20260630"></script>
+    <script src="./app.js?v=20260630"></script>
   </body>
 </html>

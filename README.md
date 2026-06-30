@@ -48,6 +48,8 @@ cp local.env.example local.env
 ./scripts/start-backend.sh
 ```
 
+启动脚本会检查 MySQL，并在本机 `6379` / `8000` 未监听时尝试启动名为 `redis`、`chroma` 的现有 Docker 容器。需要跳过检查时可设置 `SKIP_INFRA_CHECK=true`。
+
 启动前端：
 
 ```bash
@@ -57,6 +59,20 @@ cp local.env.example local.env
 访问 `http://localhost:5173`。
 
 健康检查：`http://localhost:8080/actuator/health`。如果本机没有安装 Chroma，可直接使用下面的 Docker Compose 方式启动全部服务。
+
+### Apple M5 的 Ollama 兼容模式
+
+如果桌面版 Ollama 因 Metal 内核错误无法加载模型，可以使用 Linux 容器的 CPU 后端：
+
+```bash
+./scripts/start-ollama-docker.sh
+```
+
+容器会复用 `~/.ollama` 中已经下载的模型并监听 `11435`。随后在 `local.env` 中设置：
+
+```text
+OLLAMA_BASE_URL=http://localhost:11435
+```
 
 ## Docker Compose
 
