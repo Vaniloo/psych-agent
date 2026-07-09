@@ -33,12 +33,14 @@ function init() {
   hydrateSettings();
   renderRagTrace(null);
   syncRunState();
-  addMessage("assistant", "你好，我是 Psych Agent。登录后可以开始对话、查看画像和报告。");
+  addMessage("assistant", "你好，我是 Psych Agent。登录后可以开始对话、查看报告和帮助资源。");
   pingBackend();
   window.setInterval(pingBackend, 60000);
   if (state.token) {
     loadConversations();
     loadRoleCards();
+    refreshReports();
+    loadHelpResources();
     if (isAdmin()) {
       refreshProfile();
       loadTools();
@@ -147,9 +149,12 @@ function bindAuth() {
       syncConnectionLabel();
       syncAuthUi();
       applyRoleVisibility();
+      activateDefaultView();
       toast("登录成功");
       await loadConversations();
       await loadRoleCards();
+      await refreshReports();
+      await loadHelpResources();
       if (isAdmin()) {
         await refreshProfile();
         await loadTools();
@@ -192,6 +197,7 @@ function clearSession(showToast) {
   const hadSession = Boolean(state.token || state.user);
   state.token = "";
   state.user = null;
+  state.chatMode = "agent";
   state.currentSessionId = null;
   localStorage.removeItem("psychAgentToken");
   localStorage.removeItem("psychAgentUser");
@@ -199,7 +205,10 @@ function clearSession(showToast) {
   $("#password").value = "";
   $("#conversationList").innerHTML = "";
   $("#chatLog").innerHTML = "";
-  addMessage("assistant", "你好，我是 Psych Agent。登录后可以开始对话、查看画像和报告。");
+  $("#dashboardGrid").innerHTML = "";
+  $("#reportsList").innerHTML = "";
+  $("#userReportSummary").innerHTML = "";
+  addMessage("assistant", "你好，我是 Psych Agent。登录后可以开始对话、查看报告和帮助资源。");
   renderRagTrace(null);
   setAgentStatuses({ rag: "待检索", tool: "空闲", safety: "常规", session: "未开始" });
   syncRunState();
@@ -585,7 +594,6 @@ function bindReports() {
 
 function bindHelp() {
   $("#refreshHelpBtn").addEventListener("click", loadHelpResources);
-  loadHelpResources();
 }
 
 async function loadHelpResources() {
@@ -607,20 +615,90 @@ async function refreshReports() {
   try {
     const dashboard = await api("/reports/dashboard?recentLimit=10&topRiskLimit=5");
     const reports = dashboard.reportSummaryResponse || [];
-    const highCount = reports.filter((item) => item.risk === "high").length;
-    $("#dashboardGrid").innerHTML = [
-      metric("最近报告", reports.length),
-      metric("高风险", highCount),
-      metric("风险用户", dashboard.topRiskUserResponse?.length || 0),
-    ].join("");
-    renderRiskDistribution(dashboard.riskDistribution || []);
-    renderEmotionTrend(dashboard.emotionTrend || []);
+    if (isAdmin()) {
+      $("#reportsSubtitle").textContent = "管理员查看全局风险概览、趋势和最近分析记录。";
+      $("#userReportSummary").classList.add("hidden");
+      const highCount = reports.filter((item) => item.risk === "high").length;
+      $("#dashboardGrid").innerHTML = [
+        metric("最近报告", reports.length),
+        metric("高风险", highCount),
+        metric("风险用户", dashboard.topRiskUserResponse?.length || 0),
+      ].join("");
+      renderRiskDistribution(dashboard.riskDistribution || []);
+      renderEmotionTrend(dashboard.emotionTrend || []);
+    } else {
+      $("#reportsSubtitle").textContent = "查看自己的心理状态总结和近期记录。";
+      $("#userReportSummary").classList.remove("hidden");
+      renderUserReportSummary(reports);
+      $("#dashboardGrid").innerHTML = [
+        metric("记录数", reports.length),
+        metric("主要情绪", dominantValue(reports, "emotion") || "暂无"),
+        metric("最近风险", reports[0]?.risk || "暂无"),
+      ].join("");
+      $("#riskDistribution").innerHTML = "";
+      $("#emotionTrend").innerHTML = "";
+    }
     $("#reportsList").innerHTML = reports.length
       ? reports.map(reportItem).join("")
       : empty("暂无报告");
   } catch (error) {
     toast(error.message);
   }
+}
+
+function renderUserReportSummary(reports) {
+  const latest = reports[0];
+  if (!latest) {
+    $("#userReportSummary").innerHTML = `
+      <article class="summary-panel">
+        <h3>暂无心理总结</h3>
+        <p>开始对话后，系统会根据你的最近消息生成个人心理状态记录。</p>
+      </article>
+    `;
+    return;
+  }
+  const dominantEmotion = dominantValue(reports, "emotion") || latest.emotion || "暂无";
+  const highCount = reports.filter((item) => item.risk === "high").length;
+  const mediumCount = reports.filter((item) => item.risk === "medium").length;
+  const averageConfidence = reports.length
+    ? reports.reduce((sum, item) => sum + Number(item.confidence || 0), 0) / reports.length
+    : 0;
+  const tone = highCount > 0
+    ? "近期有较强风险信号，建议优先联系可信任的人或专业支持。"
+    : mediumCount > 0
+      ? "近期压力或波动比较明显，可以把目标拆小，先处理最容易落地的一步。"
+      : "近期整体风险较低，可以继续保持稳定的自我观察和支持性对话。";
+  $("#userReportSummary").innerHTML = `
+    <article class="summary-panel">
+      <div>
+        <span class="panel-title">个人心理总结</span>
+        <h3>${escapeHtml(dominantEmotion)}</h3>
+      </div>
+      <p>${escapeHtml(tone)}</p>
+      <div class="summary-grid">
+        <span><strong>${escapeHtml(latest.risk || "暂无")}</strong><em>最近风险</em></span>
+        <span><strong>${escapeHtml(formatConfidence(averageConfidence))}</strong><em>平均置信度</em></span>
+        <span><strong>${escapeHtml(formatTime(latest.createdAt))}</strong><em>最近记录</em></span>
+      </div>
+    </article>
+  `;
+}
+
+function dominantValue(items, key) {
+  const counts = new Map();
+  for (const item of items) {
+    const value = item?.[key];
+    if (!value) continue;
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+}
+
+function formatConfidence(value) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "暂无";
+  }
+  return `${Math.round(value * 100)}%`;
 }
 
 function renderRiskDistribution(items) {
@@ -858,7 +936,14 @@ function renderSelectedToolSchema() {
 
 function applyRoleVisibility() {
   const admin = isAdmin();
+  $("#appShell").classList.toggle("admin-session", admin);
+  $("#appShell").classList.toggle("user-session", Boolean(state.token && state.user && !admin));
   $$(".admin-only").forEach((element) => element.classList.toggle("hidden", !admin));
+  if (!admin) {
+    state.chatMode = "agent";
+    $$(".mode-btn").forEach((item) => item.classList.toggle("active", item.dataset.mode === "agent"));
+    syncRunState();
+  }
   if (!admin && $(".nav-tab.active")?.classList.contains("admin-only")) {
     $(".nav-tab[data-view='chatView']").click();
   }
@@ -881,14 +966,24 @@ function syncConnectionLabel() {
     ? `${state.user.username} · ${state.apiBaseUrl}`
     : state.apiBaseUrl;
   $("#connectionLabel").textContent = label;
+  $("#appConnectionLabel").textContent = label;
   $("#connectionDot").classList.toggle("online", state.backendOnline);
+  $("#appConnectionDot").classList.toggle("online", state.backendOnline);
 }
 
 function syncAuthUi() {
   const loggedIn = Boolean(state.token && state.user);
-  $("#authFields").classList.toggle("hidden", loggedIn);
+  $("#loginScreen").classList.toggle("hidden", loggedIn);
+  $("#appShell").classList.toggle("hidden", !loggedIn);
   $("#sessionPanel").classList.toggle("hidden", !loggedIn);
   $("#sessionUsername").textContent = loggedIn ? state.user.username : "";
+}
+
+function activateDefaultView() {
+  $$(".nav-tab").forEach((tab) => tab.classList.remove("active"));
+  $$(".view").forEach((view) => view.classList.remove("active-view"));
+  $(".nav-tab[data-view='chatView']").classList.add("active");
+  $("#chatView").classList.add("active-view");
 }
 
 function empty(text) {

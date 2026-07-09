@@ -7,13 +7,39 @@
     <link rel="stylesheet" href="./styles.css?v=20260709" />
   </head>
   <body>
-    <div class="app-shell">
+    <section id="loginScreen" class="login-screen">
+      <div class="login-card">
+        <div class="brand login-brand">
+          <div class="brand-mark">PA</div>
+          <div>
+            <h1>Psych Agent</h1>
+            <p><span id="connectionDot" class="status-dot"></span><span id="connectionLabel">未连接</span></p>
+          </div>
+        </div>
+        <div id="authFields" class="auth-panel">
+          <div class="field-row">
+            <label for="username">账号</label>
+            <input id="username" autocomplete="username" placeholder="username" />
+          </div>
+          <div class="field-row">
+            <label for="password">密码</label>
+            <input id="password" autocomplete="current-password" type="password" placeholder="password" />
+          </div>
+          <div class="button-row">
+            <button id="loginBtn" class="primary-action" type="button">登录</button>
+            <button id="registerBtn" type="button">注册</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div id="appShell" class="app-shell hidden">
       <aside class="sidebar">
         <div class="brand">
           <div class="brand-mark">PA</div>
           <div>
             <h1>Psych Agent</h1>
-            <p><span id="connectionDot" class="status-dot"></span><span id="connectionLabel">未连接</span></p>
+            <p><span id="appConnectionDot" class="status-dot"></span><span id="appConnectionLabel">未连接</span></p>
           </div>
         </div>
 
@@ -28,26 +54,10 @@
           <button class="nav-tab admin-only" data-view="settingsView" type="button">配置</button>
         </nav>
 
-        <section class="auth-panel" aria-label="登录">
-          <div id="authFields">
-            <div class="field-row">
-              <label for="username">账号</label>
-              <input id="username" autocomplete="username" placeholder="username" />
-            </div>
-            <div class="field-row">
-              <label for="password">密码</label>
-              <input id="password" autocomplete="current-password" type="password" placeholder="password" />
-            </div>
-            <div class="button-row">
-              <button id="loginBtn" class="primary-action" type="button">登录</button>
-              <button id="registerBtn" type="button">注册</button>
-            </div>
-          </div>
-          <div id="sessionPanel" class="session-panel hidden">
-            <span>当前账号</span>
-            <strong id="sessionUsername"></strong>
-            <button id="logoutBtn" type="button">退出登录</button>
-          </div>
+        <section id="sessionPanel" class="session-panel hidden">
+          <span>当前账号</span>
+          <strong id="sessionUsername"></strong>
+          <button id="logoutBtn" type="button">退出登录</button>
         </section>
       </aside>
 
@@ -60,13 +70,13 @@
             </div>
             <div class="header-actions">
               <button id="newChatBtn" type="button">新对话</button>
-              <div class="segmented">
+              <div class="segmented admin-only">
                 <button class="mode-btn active" data-mode="agent" type="button">Agent</button>
                 <button class="mode-btn" data-mode="message" type="button">Route</button>
               </div>
             </div>
           </header>
-          <div id="agentStatusStrip" class="status-strip">
+          <div id="agentStatusStrip" class="status-strip admin-only">
             <span><strong>RAG</strong><em id="ragStatusValue">待检索</em></span>
             <span><strong>工具</strong><em id="toolStatusValue">空闲</em></span>
             <span><strong>安全</strong><em id="safetyStatusValue">常规</em></span>
@@ -80,7 +90,7 @@
             <section class="chat-stage">
               <div id="chatLog" class="chat-log" aria-live="polite"></div>
             </section>
-            <aside class="insight-panel">
+            <aside class="insight-panel admin-only">
               <section>
                 <div class="panel-title">智能体运行态</div>
                 <dl class="run-state">
@@ -174,12 +184,13 @@
           <header class="view-header">
             <div>
               <h2>心理报告</h2>
-              <p>查看当前账号最近分析结果和风险概览。</p>
+              <p id="reportsSubtitle">查看自己的心理状态总结和近期记录。</p>
             </div>
             <button id="refreshReportsBtn" type="button">刷新</button>
           </header>
+          <section id="userReportSummary" class="user-report-summary"></section>
           <div id="dashboardGrid" class="dashboard-grid"></div>
-          <div class="analytics-grid">
+          <div id="adminAnalytics" class="analytics-grid admin-only">
             <section class="stack-panel">
               <div class="panel-title">风险等级分布</div>
               <div id="riskDistribution" class="bar-chart"></div>

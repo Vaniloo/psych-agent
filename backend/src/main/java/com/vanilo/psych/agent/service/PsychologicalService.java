@@ -135,8 +135,27 @@ public class PsychologicalService {
                 .toList();
     }
 
+    public List<RiskCountResponse> getRiskDistribution() {
+        return reportRepository.findRiskDistribution()
+                .stream()
+                .map(row -> new RiskCountResponse((String) row[0], ((Number) row[1]).longValue()))
+                .toList();
+    }
+
     public List<EmotionTrendResponse> getEmotionTrend(Long userId) {
         return reportRepository.findEmotionTrendByUserId(userId)
+                .stream()
+                .map(row -> new EmotionTrendResponse(
+                        ((java.sql.Date) row[0]).toLocalDate(),
+                        (String) row[1],
+                        ((Number) row[2]).longValue(),
+                        ((Number) row[3]).doubleValue()
+                ))
+                .toList();
+    }
+
+    public List<EmotionTrendResponse> getEmotionTrend() {
+        return reportRepository.findEmotionTrend()
                 .stream()
                 .map(row -> new EmotionTrendResponse(
                         ((java.sql.Date) row[0]).toLocalDate(),

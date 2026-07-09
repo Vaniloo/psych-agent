@@ -49,14 +49,15 @@ public class GetDashboardTool implements ToolExecutor{
         int recentLimit = recentLimitObject == null ? 20 : ((Number) recentLimitObject).intValue();
         int topRiskLimit = topRiskLimitObject == null ? 10 : ((Number) topRiskLimitObject).intValue();
         User user =userRepository.findByUsername(username).orElseThrow(()->new RuntimeException("用户不存在"));
-        List<com.vanilo.psych.agent.dto.TopRiskUserResponse> topRiskUsers = "ADMIN".equals(user.getRole())
+        boolean admin = "ADMIN".equals(user.getRole());
+        List<com.vanilo.psych.agent.dto.TopRiskUserResponse> topRiskUsers = admin
                 ? psychologicalService.getTopRiskUsers(topRiskLimit)
                 : List.of();
         return new DashboardResponse(
                 psychologicalService.getRecentReports(user.getId(),recentLimit),
                 topRiskUsers,
-                psychologicalService.getRiskDistribution(user.getId()),
-                psychologicalService.getEmotionTrend(user.getId())
+                admin ? psychologicalService.getRiskDistribution() : psychologicalService.getRiskDistribution(user.getId()),
+                admin ? psychologicalService.getEmotionTrend() : psychologicalService.getEmotionTrend(user.getId())
         );
 
     }

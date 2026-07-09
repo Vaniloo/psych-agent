@@ -103,6 +103,21 @@ select:focus {
   box-shadow: 0 0 0 3px rgba(23, 107, 135, 0.12);
 }
 
+.login-screen {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.login-card {
+  width: min(420px, 100%);
+}
+
+.login-brand {
+  margin-bottom: 18px;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr);
@@ -195,6 +210,7 @@ select:focus {
 }
 
 .auth-panel,
+.session-panel,
 .stack-panel,
 .history-panel,
 .insight-panel,
@@ -205,6 +221,7 @@ select:focus {
 }
 
 .auth-panel,
+.session-panel,
 .stack-panel,
 .history-panel,
 .insight-panel {
@@ -344,6 +361,10 @@ select:focus {
   grid-template-columns: 240px minmax(420px, 1fr) 316px;
   gap: 12px;
   align-items: stretch;
+}
+
+.app-shell.user-session .chat-layout {
+  grid-template-columns: 260px minmax(0, 1fr);
 }
 
 .history-panel,
@@ -671,6 +692,58 @@ select:focus {
   display: block;
   margin-top: 6px;
   font-size: 28px;
+  overflow-wrap: anywhere;
+}
+
+.user-report-summary {
+  display: block;
+}
+
+.summary-panel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+
+.summary-panel h3 {
+  margin: 4px 0 0;
+  font-size: 24px;
+}
+
+.summary-panel p {
+  margin: 0;
+  color: var(--muted-strong);
+  line-height: 1.65;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.summary-grid span {
+  display: grid;
+  gap: 4px;
+  min-height: 70px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 12px;
+}
+
+.summary-grid strong {
+  overflow-wrap: anywhere;
+}
+
+.summary-grid em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
 }
 
 .list-item h3 {
@@ -873,7 +946,8 @@ select:focus {
   .role-card-list,
   .composer,
   .insight-panel,
-  .search-row {
+  .search-row,
+  .summary-grid {
     grid-template-columns: 1fr;
   }
 
