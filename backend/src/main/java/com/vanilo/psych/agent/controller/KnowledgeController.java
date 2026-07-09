@@ -50,4 +50,10 @@ public class KnowledgeController {
         return "ok";
     }
 
+    @PostMapping("/reindex")
+    public String reindexBySource(@RequestParam("source") String source) {
+        int count = knowledgeService.reindexBySource(source);
+        return "ok, reindexed=" + count;
+    }
+
 }

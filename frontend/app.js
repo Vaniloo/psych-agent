@@ -7,6 +7,9 @@ const state = {
   currentSessionId: null,
   profiles: [],
   adminMemories: [],
+  backendOnline: false,
+  conversations: [],
+  currentRagTrace: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -28,7 +31,11 @@ function init() {
   syncAuthUi();
   applyRoleVisibility();
   hydrateSettings();
+  renderRagTrace(null);
+  syncRunState();
   addMessage("assistant", "你好，我是 Psych Agent。登录后可以开始对话、查看画像和报告。");
+  pingBackend();
+  window.setInterval(pingBackend, 60000);
   if (state.token) {
     loadConversations();
     loadRoleCards();
@@ -63,6 +70,8 @@ async function requestJson(path, options, allowFallback) {
     if (!response.ok || data?.success === false) {
       throw new Error(data?.message || text || `请求失败：${response.status}`);
     }
+    state.backendOnline = true;
+    syncConnectionLabel();
     return data ?? text;
   } catch (error) {
     const fallbackUrl = getLoopbackFallbackUrl(state.apiBaseUrl);
@@ -74,6 +83,8 @@ async function requestJson(path, options, allowFallback) {
       return requestJson(path, options, false);
     }
     if (error instanceof TypeError) {
+      state.backendOnline = false;
+      syncConnectionLabel();
       throw new Error(`无法连接后端：${state.apiBaseUrl}。请确认后端已启动，并打开 ${state.apiBaseUrl}/test/ping 检查。`);
     }
     throw error;
@@ -113,6 +124,7 @@ function bindNavigation() {
       state.chatMode = button.dataset.mode;
       $$(".mode-btn").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
+      syncRunState();
     });
   });
 }
@@ -188,6 +200,9 @@ function clearSession(showToast) {
   $("#conversationList").innerHTML = "";
   $("#chatLog").innerHTML = "";
   addMessage("assistant", "你好，我是 Psych Agent。登录后可以开始对话、查看画像和报告。");
+  renderRagTrace(null);
+  setAgentStatuses({ rag: "待检索", tool: "空闲", safety: "常规", session: "未开始" });
+  syncRunState();
   syncConnectionLabel();
   syncAuthUi();
   applyRoleVisibility();
@@ -215,6 +230,13 @@ function bindChat() {
     if (!message) return;
     addMessage("user", message);
     input.value = "";
+    setAgentStatuses({
+      rag: state.chatMode === "agent" ? "准备检索" : "未启用",
+      tool: "决策中",
+      safety: "评估中",
+    });
+    syncRunState("决策中", 0);
+    const pendingMessage = addMessage("meta", "正在生成回应...");
 
     try {
       const path = state.chatMode === "agent" ? "/agent/chat" : "/message";
@@ -222,10 +244,13 @@ function bindChat() {
         method: "POST",
         body: JSON.stringify({ message, sessionId: state.chatMode === "agent" ? state.currentSessionId : null }),
       });
+      pendingMessage.remove();
       if (data.sessionId) {
         state.currentSessionId = data.sessionId;
       }
       addMessage("assistant", data.reply || data);
+      renderRagTrace(data.ragTrace || null);
+      updateAgentStateFromResponse(data);
       if (data.usedTool && data.toolName) {
         addMessage("meta", `已调用工具：${data.toolName}`);
       }
@@ -234,7 +259,10 @@ function bindChat() {
       }
       await loadConversations();
     } catch (error) {
+      pendingMessage.remove();
       addMessage("meta", error.message);
+      setAgentStatuses({ rag: "失败", tool: "异常", safety: "需检查" });
+      syncRunState("异常", 0);
     }
   });
 }
@@ -298,6 +326,9 @@ function startNewConversation() {
   state.currentSessionId = null;
   $("#chatLog").innerHTML = "";
   addMessage("assistant", "新的对话已开始。");
+  renderRagTrace(null);
+  setAgentStatuses({ rag: "待检索", tool: "空闲", safety: "常规", session: "新对话" });
+  syncRunState();
   renderConversationList();
 }
 
@@ -307,6 +338,7 @@ function addMessage(role, content) {
   item.textContent = content;
   $("#chatLog").appendChild(item);
   $("#chatLog").scrollTop = $("#chatLog").scrollHeight;
+  return item;
 }
 
 function addCrisisCard(resources) {
@@ -319,6 +351,76 @@ function addCrisisCard(resources) {
     </div>
   `;
   $("#chatLog").appendChild(card);
+}
+
+function updateAgentStateFromResponse(data) {
+  const ragTrace = data.ragTrace || null;
+  const citationCount = ragTrace?.citationCount || ragTrace?.citations?.length || 0;
+  setAgentStatuses({
+    rag: ragTrace ? `${citationCount} 条引用` : "未检索",
+    tool: data.usedTool ? data.toolName || "已调用" : "未调用",
+    safety: data.crisis ? "危机响应" : "常规",
+    session: state.currentSessionId ? `#${state.currentSessionId}` : "临时",
+  });
+  syncRunState(data.usedTool ? data.toolName || "已调用" : "未调用", citationCount);
+}
+
+function setAgentStatuses(values = {}) {
+  if (values.rag !== undefined) $("#ragStatusValue").textContent = values.rag;
+  if (values.tool !== undefined) $("#toolStatusValue").textContent = values.tool;
+  if (values.safety !== undefined) $("#safetyStatusValue").textContent = values.safety;
+  if (values.session !== undefined) $("#sessionStatusValue").textContent = values.session;
+}
+
+function syncRunState(toolLabel = null, citationCount = null) {
+  $("#runModeLabel").textContent = state.chatMode === "agent" ? "Agent" : "Route";
+  if (toolLabel !== null) {
+    $("#runToolLabel").textContent = toolLabel;
+  }
+  if (citationCount !== null) {
+    $("#runCitationLabel").textContent = String(citationCount);
+  }
+}
+
+function renderRagTrace(trace) {
+  state.currentRagTrace = trace;
+  const panel = $("#ragTracePanel");
+  if (!trace) {
+    panel.innerHTML = `<div class="trace-empty">本轮未调用知识检索</div>`;
+    $("#runCitationLabel").textContent = "0";
+    return;
+  }
+  const citations = trace.citations || [];
+  $("#runCitationLabel").textContent = String(trace.citationCount ?? citations.length);
+  panel.innerHTML = `
+    <div class="trace-summary">
+      <span class="tag">${escapeHtml(trace.tool || "rag")}</span>
+      <span class="tag">${escapeHtml(trace.status || "completed")}</span>
+    </div>
+    <div class="trace-query">${escapeHtml(trace.query || "未记录查询")}</div>
+    ${citations.length ? citations.map(ragCitationItem).join("") : `<div class="trace-empty">没有返回可引用片段</div>`}
+  `;
+}
+
+function ragCitationItem(item) {
+  const score = item.relevanceScore === undefined || item.relevanceScore === null
+    ? "n/a"
+    : Number(item.relevanceScore).toFixed(2);
+  const confidence = item.confidenceLabel || "unknown";
+  return `
+    <article class="trace-citation">
+      <header>
+        <strong>#${escapeHtml(item.rank || "")}</strong>
+        <span class="tag ${escapeHtml(confidence)}">${escapeHtml(confidence)}</span>
+      </header>
+      <p>${escapeHtml(item.excerpt || "")}</p>
+      <footer>
+        <span>${escapeHtml(item.source || "unknown")}</span>
+        <span>${escapeHtml(item.category || "default")}</span>
+        <span>${escapeHtml(score)}</span>
+      </footer>
+    </article>
+  `;
 }
 
 function bindProfile() {
@@ -468,6 +570,9 @@ async function continueConversation(sessionId) {
     state.currentSessionId = sessionId;
     $("#chatLog").innerHTML = "";
     messages.forEach((message) => addMessage(message.role === "assistant" ? "assistant" : "user", message.content));
+    renderRagTrace(null);
+    setAgentStatuses({ rag: "历史会话", tool: "未调用", safety: "常规", session: `#${sessionId}` });
+    syncRunState("未调用", 0);
     renderConversationList();
   } catch (error) {
     toast(error.message);
@@ -563,6 +668,7 @@ function reportItem(item) {
 function bindKnowledge() {
   $("#refreshKnowledgeBtn").addEventListener("click", loadKnowledge);
   $("#searchKnowledgeBtn").addEventListener("click", searchKnowledge);
+  $("#reindexKnowledgeBtn").addEventListener("click", reindexKnowledgeSource);
   $("#knowledgeForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const payload = {
@@ -581,6 +687,31 @@ function bindKnowledge() {
       });
       $("#knowledgeContent").value = "";
       toast("知识已添加");
+      await loadKnowledge();
+    } catch (error) {
+      toast(error.message);
+    }
+  });
+  $("#knowledgeImportForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = {
+      category: $("#importCategory").value.trim(),
+      source: $("#importSource").value.trim(),
+      content: $("#importContent").value.trim(),
+      chunkSize: Number($("#importChunkSize").value || 400),
+      overlap: Number($("#importOverlap").value || 80),
+    };
+    if (!payload.content) {
+      toast("请输入长文内容");
+      return;
+    }
+    try {
+      await api("/knowledge/import", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      $("#importContent").value = "";
+      toast("长文已导入并写入向量库");
       await loadKnowledge();
     } catch (error) {
       toast(error.message);
@@ -606,8 +737,36 @@ async function searchKnowledge() {
     return;
   }
   try {
-    const data = await api(`/knowledge/search?query=${encodeURIComponent(query)}`);
+    const params = new URLSearchParams({
+      query,
+      limit: $("#knowledgeLimit").value || "6",
+    });
+    const category = $("#knowledgeSearchCategory").value.trim();
+    if (category) {
+      params.set("category", category);
+    }
+    const data = await api(`/knowledge/search?${params.toString()}`);
     renderKnowledge(data || []);
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function reindexKnowledgeSource() {
+  if (!isAdmin()) return;
+  const source = $("#knowledgeReindexSource").value.trim()
+    || $("#knowledgeSource").value.trim()
+    || $("#importSource").value.trim();
+  if (!source) {
+    toast("请输入要重建的来源");
+    return;
+  }
+  try {
+    const result = await api(`/knowledge/reindex?source=${encodeURIComponent(source)}`, {
+      method: "POST",
+    });
+    toast(result || "来源索引已重建");
+    await loadKnowledge();
   } catch (error) {
     toast(error.message);
   }
@@ -617,20 +776,41 @@ function renderKnowledge(items) {
   $("#knowledgeResults").innerHTML = items.length
     ? items.map(knowledgeItem).join("")
     : empty("暂无知识");
+  bindKnowledgeItemActions();
 }
 
 function knowledgeItem(item) {
+  const confidence = item.confidenceLabel || "unknown";
   return `
     <article class="list-item">
       <h3>${escapeHtml(item.category || "未分类")}</h3>
       <p>
+        ${item.rank ? `<span class="tag">#${escapeHtml(item.rank)}</span>` : ""}
         <span class="tag">${escapeHtml(item.source || "unknown")}</span>
         ${item.relevanceScore !== undefined && item.relevanceScore !== null ? `<span class="tag">相关度 ${escapeHtml(Number(item.relevanceScore).toFixed(2))}</span>` : ""}
+        ${item.confidenceLabel ? `<span class="tag ${escapeHtml(confidence)}">${escapeHtml(confidence)}</span>` : ""}
         ${item.matchReason ? `<span class="tag">${escapeHtml(item.matchReason)}</span>` : ""}
       </p>
       <p>${escapeHtml(item.content || "")}</p>
+      ${item.id ? `<div class="item-actions"><button data-knowledge-delete="${escapeHtml(item.id)}" type="button">删除</button></div>` : ""}
     </article>
   `;
+}
+
+function bindKnowledgeItemActions() {
+  $$("[data-knowledge-delete]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.dataset.knowledgeDelete;
+      if (!id || !window.confirm("确认删除这条知识？")) return;
+      try {
+        await api(`/knowledge/${encodeURIComponent(id)}`, { method: "DELETE" });
+        toast("知识已删除");
+        await loadKnowledge();
+      } catch (error) {
+        toast(error.message);
+      }
+    });
+  });
 }
 
 function bindSettings() {
@@ -701,6 +881,7 @@ function syncConnectionLabel() {
     ? `${state.user.username} · ${state.apiBaseUrl}`
     : state.apiBaseUrl;
   $("#connectionLabel").textContent = label;
+  $("#connectionDot").classList.toggle("online", state.backendOnline);
 }
 
 function syncAuthUi() {
@@ -734,6 +915,16 @@ function toast(message) {
   element.classList.add("visible");
   window.clearTimeout(toast.timer);
   toast.timer = window.setTimeout(() => element.classList.remove("visible"), 2600);
+}
+
+async function pingBackend() {
+  try {
+    const response = await fetch(`${state.apiBaseUrl}/test/ping`, { cache: "no-store" });
+    state.backendOnline = response.ok;
+  } catch {
+    state.backendOnline = false;
+  }
+  syncConnectionLabel();
 }
 
 init();

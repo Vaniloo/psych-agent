@@ -18,6 +18,7 @@ public class AgentChatResponse {
     private String helpCenterUrl;
     private List<HelpResourceResponse> resources;
     private AnalyzeResponse analyzeResponse;
+    private RagTraceResponse ragTrace;
 
     public AgentChatResponse(String reply, boolean usedTool, String toolName, Long sessionId) {
         this.reply = reply;
@@ -25,5 +26,14 @@ public class AgentChatResponse {
         this.toolName = toolName;
         this.sessionId = sessionId;
         this.resources = List.of();
+    }
+
+    public AgentChatResponse(String reply,
+                             boolean usedTool,
+                             String toolName,
+                             Long sessionId,
+                             RagTraceResponse ragTrace) {
+        this(reply, usedTool, toolName, sessionId);
+        this.ragTrace = ragTrace;
     }
 }

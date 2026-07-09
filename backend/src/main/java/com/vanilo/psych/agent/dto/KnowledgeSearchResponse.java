@@ -12,7 +12,9 @@ public class KnowledgeSearchResponse {
     private String category;
     private String source;
     private String id;
+    private Integer rank;
     private Double relevanceScore;
+    private String confidenceLabel;
     private String matchReason;
 
     public KnowledgeSearchResponse(String content, String category, String source, String id) {

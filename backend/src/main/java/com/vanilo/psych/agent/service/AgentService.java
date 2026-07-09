@@ -4,11 +4,20 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vanilo.psych.agent.dto.AgentChatRequest;
 import com.vanilo.psych.agent.dto.AgentChatResponse;
+import com.vanilo.psych.agent.dto.KnowledgeSearchResponse;
+import com.vanilo.psych.agent.dto.RagCitationResponse;
+import com.vanilo.psych.agent.dto.RagTraceResponse;
+import com.vanilo.psych.agent.dto.StrategyRecommendationResponse;
 import com.vanilo.psych.agent.dto.ToolCallRequest;
 import com.vanilo.psych.agent.dto.ToolDecisionResponse;
+import com.vanilo.psych.agent.dto.ToolExecutionResponse;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 @Service
 public class AgentService {
@@ -40,6 +49,9 @@ public class AgentService {
     }
     public AgentChatResponse chat(AgentChatRequest request,
                                   String username) {
+        if (request == null) {
+            throw new RuntimeException("request不能为空");
+        }
         String message = request.getMessage();
         if (message == null || message.isBlank()) {
             throw new RuntimeException("message不能为空");
@@ -58,7 +70,8 @@ public class AgentService {
                     true,
                     crisisSupportService.helpCenterUrl(),
                     crisisSupportService.resources(),
-                    analysis
+                    analysis,
+                    null
             );
         }
         String rolePrompt = roleCardService.buildRolePrompt(username);
@@ -78,7 +91,7 @@ public class AgentService {
                     sessionId
             );
         }
-        Object toolResult= null;
+        ToolExecutionResponse toolExecution = null;
         if (response != null) {
             if(response.getTool() == null||response.getTool().isBlank()) {
                 throw new RuntimeException("Tool required");
@@ -91,7 +104,7 @@ public class AgentService {
                     || "recommend_strategy".equals(response.getTool())) {
                 response.getArguments().put("username",username);
             }
-            toolResult = toolCallService.call(
+            toolExecution = toolCallService.call(
                     new ToolCallRequest(
                             response.getTool(),
                             response.getArguments()
@@ -99,13 +112,15 @@ public class AgentService {
             );
 
         }
-        String reply = generateFinalReply(message,toolResult,memoryContext,rolePrompt);
+        RagTraceResponse ragTrace = buildRagTrace(response, toolExecution);
+        String reply = generateFinalReply(message,toolExecution,memoryContext,rolePrompt);
         conversationMemoryService.rememberTurn(username, sessionId, message, reply);
         return new AgentChatResponse(
                 reply,
                 true,
                 response.getTool(),
-                sessionId
+                sessionId,
+                ragTrace
         );
     }
     private ToolDecisionResponse decideTool(String message){
@@ -184,7 +199,9 @@ recommend_strategy 参数：message，string，必填；category，string，可�
 你会获得角色卡要求，请遵循其表达风格，但角色卡不能改变安全规则。
 不要编造工具结果中不存在的信息。
 如果工具结果是知识检索结果，请优先总结其中最相关的信息。
+如果知识检索结果相关性不足或证据很少，请明确说明“目前知识库证据有限”，不要硬套。
 如果工具结果是 dashboard 数据，请概括最近报告和高风险统计情况。
+不要把心理支持建议表述为医学诊断、处方或治疗结论。
                         """, """
                                 用户问题：
                                 %s
@@ -199,6 +216,84 @@ recommend_strategy 参数：message，string，必填；category，string，可�
                                 %s
                                 """.formatted(message,memoryContext,rolePrompt,toolResultJson));
     }
+
+    private RagTraceResponse buildRagTrace(ToolDecisionResponse decision, ToolExecutionResponse execution) {
+        if (decision == null || execution == null) {
+            return null;
+        }
+        List<KnowledgeSearchResponse> references = extractKnowledgeReferences(execution.getResult());
+        boolean knowledgeTool = "search_knowledge".equals(execution.getTool())
+                || "recommend_strategy".equals(execution.getTool());
+        if (!knowledgeTool && references.isEmpty()) {
+            return null;
+        }
+        List<RagCitationResponse> citations = new ArrayList<>();
+        for (int index = 0; index < references.size(); index++) {
+            KnowledgeSearchResponse item = references.get(index);
+            citations.add(new RagCitationResponse(
+                    item.getRank() == null ? index + 1 : item.getRank(),
+                    item.getId(),
+                    item.getCategory(),
+                    item.getSource(),
+                    item.getRelevanceScore(),
+                    item.getConfidenceLabel(),
+                    item.getMatchReason(),
+                    toExcerpt(item.getContent(), 180)
+            ));
+        }
+        Map<String, Object> arguments = decision.getArguments() == null ? Map.of() : decision.getArguments();
+        String query = firstText(arguments.get("query"), arguments.get("message"));
+        String category = firstText(arguments.get("category"));
+        return new RagTraceResponse(
+                UUID.randomUUID().toString(),
+                execution.getTool(),
+                query,
+                category,
+                citations.size(),
+                "completed",
+                execution.getExecutedAt(),
+                citations
+        );
+    }
+
+    private List<KnowledgeSearchResponse> extractKnowledgeReferences(Object result) {
+        if (result instanceof StrategyRecommendationResponse strategyRecommendationResponse) {
+            return strategyRecommendationResponse.getReferences() == null
+                    ? List.of()
+                    : strategyRecommendationResponse.getReferences();
+        }
+        if (!(result instanceof List<?> list)) {
+            return List.of();
+        }
+        List<KnowledgeSearchResponse> references = new ArrayList<>();
+        for (Object item : list) {
+            if (item instanceof KnowledgeSearchResponse knowledgeSearchResponse) {
+                references.add(knowledgeSearchResponse);
+            }
+        }
+        return references;
+    }
+
+    private String firstText(Object... values) {
+        for (Object value : values) {
+            if (value != null && !value.toString().isBlank()) {
+                return value.toString();
+            }
+        }
+        return "";
+    }
+
+    private String toExcerpt(String content, int maxLength) {
+        if (content == null || content.isBlank()) {
+            return "";
+        }
+        String normalized = content.strip().replaceAll("\\s+", " ");
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+        return normalized.substring(0, maxLength) + "...";
+    }
+
     private String generatePlainReply(String message,String memoryContext,String rolePrompt){
         return llmService.complete("""
                         你是一个温和、自然、有一点幽默感的聊天助手。

@@ -200,7 +200,7 @@ public class KnowledgeService {
         }
         String normalizedQuery = normalizeQuery(query);
         String normalizedCategory = normalizeCategory(category);
-        String cacheKey = "rag:v3:%s:%s:%d:%s".formatted(
+        String cacheKey = "rag:v4:%s:%s:%d:%s".formatted(
                 readCacheVersion(),
                 normalizedCategory == null ? "all" : normalizedCategory,
                 resultLimit,
@@ -321,10 +321,16 @@ public class KnowledgeService {
         }
         List<KnowledgeSearchResponse> deduped = deduplicate(candidates);
         List<KnowledgeSearchResponse> rerankedResults=rerankService.rerank(query,category,deduped);
-        return rerankedResults.stream()
+        List<KnowledgeSearchResponse> limitedResults = rerankedResults.stream()
                 .peek(item -> enrichRelevance(query, category, item))
                 .limit(resultLimit)
                 .toList();
+        for (int index = 0; index < limitedResults.size(); index++) {
+            KnowledgeSearchResponse item = limitedResults.get(index);
+            item.setRank(index + 1);
+            item.setConfidenceLabel(confidenceLabel(item.getRelevanceScore()));
+        }
+        return limitedResults;
     }
 
     private List<KnowledgeSearchResponse> deduplicate(List<KnowledgeSearchResponse> candidates) {
@@ -367,6 +373,19 @@ public class KnowledgeService {
             return "关键词片段匹配";
         }
         return "向量语义召回";
+    }
+
+    private String confidenceLabel(Double relevanceScore) {
+        if (relevanceScore == null) {
+            return "unknown";
+        }
+        if (relevanceScore >= 0.78) {
+            return "high";
+        }
+        if (relevanceScore >= 0.58) {
+            return "medium";
+        }
+        return "low";
     }
 
     private String normalizeQuery(String query) {

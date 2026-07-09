@@ -48,8 +48,8 @@ public class LocalModelRerankService implements RerankService {
                 scoreMap.put(item.getId(), item.getScore());
             }
             return candidates.stream().sorted((a,b)->{
-                Double aScore=scoreMap.get(a.getId());
-                Double bScore=scoreMap.get(b.getId());
+                Double aScore=scoreMap.getOrDefault(a.getId(), 0.0);
+                Double bScore=scoreMap.getOrDefault(b.getId(), 0.0);
                 return Double.compare(bScore,aScore);
             }).collect(Collectors.toList());
         } catch (Exception e) {
