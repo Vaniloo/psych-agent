@@ -29,8 +29,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth->auth
                         .requestMatchers("/auth/**", "/test/ping", "/help/**", "/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
-                        .requestMatchers("/reports/my", "/reports/dashboard", "/chat", "/chat/analyze", "/message", "/agent/chat", "/conversations/**", "/role-cards/**", "/tools/**").authenticated()
-                        .requestMatchers("/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/reports/my", "/reports/dashboard", "/chat", "/chat/analyze", "/message", "/agent/chat", "/conversations/**", "/role-cards/**", "/tools/**", "/feedback", "/feedback/my").authenticated()
+                        .requestMatchers("/admin/**", "/feedback/**").hasRole("ADMIN")
                         .requestMatchers("/profile","/profile/**").hasRole("ADMIN")
                         .requestMatchers("/knowledge/**").hasRole("ADMIN")
                         .requestMatchers("/test/**").hasRole("ADMIN")
