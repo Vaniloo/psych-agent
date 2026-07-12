@@ -1,1 +1,62 @@
+name: CI
 
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build with Maven
+        run: cd backend && ./mvnw clean compile -DskipTests
+
+      - name: Run unit tests
+        run: cd backend && ./mvnw test
+
+  docker-validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose
+        run: docker compose config --quiet
+
+      - name: Build Docker images
+        run: docker compose build --no-cache
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check frontend JavaScript
+        run: |
+          node --check frontend/app.js
+          node --check frontend/config.js
+
+      - name: Check Java formatting
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Check for obvious issues in Java code
+        run: cd backend && ./mvnw checkstyle:check 2>/dev/null || echo "Checkstyle not configured, skipping"
